@@ -90,6 +90,13 @@ pub struct NetworkConfig {
     pub contribute_gpu: bool,
     pub contribute_storage: bool,
     pub contribute_cpu: bool,
+    /// Percentage of resources to contribute (0-100). Default 50.
+    #[serde(default = "default_contribute_percent")]
+    pub contribute_percent: u32,
+}
+
+fn default_contribute_percent() -> u32 {
+    50
 }
 
 impl Default for NetworkConfig {
@@ -100,6 +107,7 @@ impl Default for NetworkConfig {
             contribute_gpu: true,
             contribute_storage: true,
             contribute_cpu: true,
+            contribute_percent: 50,
         }
     }
 }
@@ -153,6 +161,19 @@ pub struct ResourceManifest {
 pub struct GpuInfo {
     pub name: String,
     pub vram_mb: u64,
+}
+
+impl ResourceManifest {
+    /// Return a manifest reflecting only the contributed portion of resources.
+    pub fn contributed(&self, percent: u32) -> Self {
+        let pct = percent.min(100) as u64;
+        Self {
+            cpu_cores: ((self.cpu_cores as u64 * pct) / 100).max(1) as u16,
+            ram_mb: (self.ram_mb * pct) / 100,
+            storage_avail_mb: ((self.storage_avail_mb * pct) / 100).min(102_400), // cap 100GB
+            gpu: self.gpu.clone(),
+        }
+    }
 }
 
 // ── Protocol types (node ↔ coordinator) ─────────────────────────────────

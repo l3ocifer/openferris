@@ -94,6 +94,11 @@ fn apply_env_overrides(config: &mut FerrisConfig) {
             config.network.heartbeat_interval_secs = n;
         }
     }
+    if let Ok(v) = std::env::var("FERRIS_CONTRIBUTE_PERCENT") {
+        if let Ok(n) = v.parse::<u32>() {
+            config.network.contribute_percent = n.min(100);
+        }
+    }
     if let Ok(v) = std::env::var("FERRIS_OLLAMA_URL") {
         config.inference.ollama_url = v;
     }

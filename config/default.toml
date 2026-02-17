@@ -21,6 +21,7 @@ heartbeat_interval_secs = 30
 contribute_gpu = true
 contribute_storage = true
 contribute_cpu = true
+contribute_percent = 50
 
 [inference]
 ollama_url = "http://localhost:11434"
