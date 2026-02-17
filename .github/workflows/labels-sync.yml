@@ -1,0 +1,60 @@
+name: labels-sync
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/labels-sync.yml"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              ["needs/triage", "D4C5F9", "New issue awaiting triage"],
+              ["ready/triaged", "0E8A16", "Issue has enough detail for maintainer review"],
+              ["needs/info", "FBCA04", "Issue needs additional reproduction detail"],
+              ["needs/moderation", "B60205", "Potential code-of-conduct or abuse review required"],
+              ["type/bug", "D73A4A", "Bug report"],
+              ["type/feature", "A2EEEF", "Feature request"],
+              ["good first issue", "7057FF", "Good entry point for new contributors"],
+              ["help wanted", "008672", "Maintainers welcome external help"],
+              ["status/stale", "CCCCCC", "Inactive item pending close"],
+              ["docs", "0075CA", "Documentation change"],
+              ["core", "5319E7", "Core crate changes"],
+              ["memory", "1D76DB", "Memory subsystem changes"],
+              ["storage", "0052CC", "Storage subsystem changes"],
+              ["tasks", "0B5FFF", "Task subsystem changes"],
+              ["mcp", "2B67D1", "MCP subsystem changes"],
+              ["ci", "BFD4F2", "CI/CD changes"]
+            ];
+
+            for (const [name, color, description] of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name
+                });
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color,
+                  description
+                });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color,
+                  description
+                });
+              }
+            }

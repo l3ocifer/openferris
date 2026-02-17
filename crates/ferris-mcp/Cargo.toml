@@ -1,0 +1,19 @@
+[package]
+name = "ferris-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+base64.workspace = true
+ferris-common = { path = "../ferris-common" }
+ferris-memory = { path = "../ferris-memory" }
+ferris-storage = { path = "../ferris-storage" }
+ferris-tasks = { path = "../ferris-tasks" }
+rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

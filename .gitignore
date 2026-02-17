@@ -3,3 +3,8 @@ references/
 *.tmp
 setup.sh
 bootstrap.sh
+target/
+Cargo.lock
+.env
+.idea/
+.vscode/

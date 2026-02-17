@@ -1,0 +1,42 @@
+[package]
+name = "ferris-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+base64.workspace = true
+clap.workspace = true
+dirs.workspace = true
+ed25519-dalek.workspace = true
+ferris-common = { path = "../ferris-common" }
+ferris-mcp = { path = "../ferris-mcp" }
+ferris-memory = { path = "../ferris-memory" }
+ferris-storage = { path = "../ferris-storage" }
+ferris-tasks = { path = "../ferris-tasks" }
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[lib]
+name = "ferris_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferris"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }
+hyper = "1"
+http-body-util = "0.1"

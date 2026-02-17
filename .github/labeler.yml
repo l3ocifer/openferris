@@ -1,0 +1,27 @@
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "README.md"]
+
+core:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/ferris-core/**", "crates/ferris-common/**"]
+
+memory:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/ferris-memory/**"]
+
+storage:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/ferris-storage/**"]
+
+tasks:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/ferris-tasks/**"]
+
+mcp:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/ferris-mcp/**"]
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/workflows/**"]

@@ -1,0 +1,26 @@
+name: stale
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v9
+        with:
+          stale-issue-message: "This issue has gone quiet for 30 days. Please update if it's still relevant."
+          stale-pr-message: "This PR has no activity for 30 days. Please rebase/update if it's still active."
+          close-issue-message: "Closing due to inactivity. Reopen with new context if needed."
+          close-pr-message: "Closing due to inactivity. Reopen or create a fresh PR when ready."
+          days-before-stale: 30
+          days-before-close: 14
+          stale-issue-label: "status/stale"
+          stale-pr-label: "status/stale"
+          exempt-issue-labels: "pinned,security,help wanted"
+          exempt-pr-labels: "pinned,security"

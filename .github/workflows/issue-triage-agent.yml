@@ -1,0 +1,91 @@
+name: issue-triage-agent
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Triage issue with rules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = (issue.title || "").toLowerCase();
+            const body = (issue.body || "");
+            const bodyLower = body.toLowerCase();
+
+            const labelsToAdd = new Set(["needs/triage"]);
+
+            // Type labeling
+            if (title.includes("bug") || bodyLower.includes("expected") && bodyLower.includes("actual")) {
+              labelsToAdd.add("type/bug");
+            }
+            if (title.includes("feature") || bodyLower.includes("proposed solution")) {
+              labelsToAdd.add("type/feature");
+            }
+
+            // Report quality heuristics
+            const hasSteps = bodyLower.includes("steps to reproduce");
+            const hasExpected = bodyLower.includes("expected");
+            const hasActual = bodyLower.includes("actual");
+            const qualityScore =
+              (hasSteps ? 1 : 0) +
+              (hasExpected ? 1 : 0) +
+              (hasActual ? 1 : 0) +
+              (body.length > 300 ? 1 : 0);
+
+            if (qualityScore <= 1) {
+              labelsToAdd.add("needs/info");
+            } else {
+              labelsToAdd.add("ready/triaged");
+            }
+
+            // Lightweight moderation trigger list
+            const flaggedTerms = ["idiot", "stupid", "hate speech", "kill yourself"];
+            const hasFlaggedContent = flaggedTerms.some(t => bodyLower.includes(t) || title.includes(t));
+            if (hasFlaggedContent) {
+              labelsToAdd.add("needs/moderation");
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: Array.from(labelsToAdd),
+            });
+
+            // Post triage feedback as an "agent" moderation/triage note.
+            const triageComment = [
+              "Automated triage report:",
+              `- quality score: ${qualityScore}/4`,
+              `- has reproduction steps: ${hasSteps ? "yes" : "no"}`,
+              `- has expected vs actual: ${hasExpected && hasActual ? "yes" : "no"}`,
+              "- next step:",
+              hasFlaggedContent
+                ? "  - flagged for maintainer moderation review"
+                : (qualityScore <= 1
+                    ? "  - please add reproduction steps, expected behavior, and logs"
+                    : "  - ready for maintainer review")
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: triageComment,
+            });
+
+            if (hasFlaggedContent) {
+              await github.rest.issues.lock({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                lock_reason: "off-topic"
+              });
+            }

@@ -1,0 +1,16 @@
+[agent]
+name = "ferris-agent"
+data_dir = "~/.ferris"
+
+[mcp]
+transport = "stdio"
+port = 9420
+
+[memory]
+max_entries = 1000
+
+[storage]
+max_mb = 100
+
+[tasks]
+max_scheduled = 10

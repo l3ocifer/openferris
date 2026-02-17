@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a new feature.
+title: "[feature]: "
+labels: ["type/feature", "needs/triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, input/output, and constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and impact
+      description: Which crates/docs/components are affected?

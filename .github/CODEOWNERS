@@ -1,0 +1,5 @@
+* @leo
+
+# Add path owners as the team grows, for example:
+# /crates/ferris-memory/ @memory-maintainers
+# /crates/ferris-storage/ @storage-maintainers
