@@ -86,4 +86,12 @@ fn apply_env_overrides(config: &mut FerrisConfig) {
             config.tasks.max_scheduled = n;
         }
     }
+    if let Ok(v) = std::env::var("FERRIS_COORDINATOR_URL") {
+        config.network.coordinator_url = v;
+    }
+    if let Ok(v) = std::env::var("FERRIS_HEARTBEAT_INTERVAL") {
+        if let Ok(n) = v.parse() {
+            config.network.heartbeat_interval_secs = n;
+        }
+    }
 }

@@ -165,7 +165,7 @@ async fn cmd_serve(
         }
         "http" => {
             tracing::info!(agent_id = %identity.agent_id, "starting HTTP server");
-            ferris_core::server::run_server(&config, pool, host, port).await
+            ferris_core::server::run_server(&config, pool, &identity.agent_id, host, port).await
         }
         other => Err(ferris_common::FerrisError::Config(format!(
             "unknown transport: {other} (expected 'stdio' or 'http')"

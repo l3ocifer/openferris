@@ -10,6 +10,7 @@ use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use ferris_common::FerrisConfig;
+use ferris_inference::{ChatCompletionRequest, OllamaProxy};
 use ferris_memory::MemoryStore;
 use ferris_storage::ObjectStore;
 use ferris_tasks::TaskScheduler;
@@ -23,6 +24,8 @@ struct AppState {
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
+    inference: Arc<OllamaProxy>,
+    agent_id: String,
 }
 
 // ── Request / Response types ────────────────────────────────────────────
@@ -103,6 +106,7 @@ struct StatusResp {
 pub async fn run_server(
     config: &FerrisConfig,
     pool: SqlitePool,
+    agent_id: &str,
     host: &str,
     port: u16,
 ) -> ferris_common::Result<()> {
@@ -112,6 +116,11 @@ pub async fn run_server(
         memory: Arc::new(MemoryStore::new(pool.clone(), config.memory.max_entries)),
         storage: Arc::new(ObjectStore::new(pool.clone(), objects_dir, config.storage.max_mb)),
         tasks: Arc::new(TaskScheduler::new(pool, config.tasks.max_scheduled)),
+        inference: Arc::new(OllamaProxy::new(
+            "http://localhost:11434",
+            config.network.max_concurrent_requests,
+        )),
+        agent_id: agent_id.into(),
     };
 
     let app = Router::new()
@@ -125,6 +134,8 @@ pub async fn run_server(
         .route("/api/v1/storage/{file_id}", get(retrieve))
         .route("/api/v1/tasks", post(schedule_task).get(list_tasks))
         .route("/api/v1/tasks/{task_id}", delete(cancel_task))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1/models", get(list_models))
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}")
@@ -151,6 +162,8 @@ pub fn build_app(
         memory,
         storage,
         tasks,
+        inference: Arc::new(OllamaProxy::new("http://localhost:11434", 4)),
+        agent_id: "test-agent".into(),
     };
 
     Router::new()
@@ -164,6 +177,8 @@ pub fn build_app(
         .route("/api/v1/storage/{file_id}", get(retrieve))
         .route("/api/v1/tasks", post(schedule_task).get(list_tasks))
         .route("/api/v1/tasks/{task_id}", delete(cancel_task))
+        .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1/models", get(list_models))
         .with_state(state)
 }
 
@@ -328,5 +343,42 @@ async fn cancel_task(
             (StatusCode::NOT_FOUND, "task not found").into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn chat_completions(
+    State(s): State<AppState>,
+    Json(req): Json<ChatCompletionRequest>,
+) -> impl IntoResponse {
+    match s.inference.chat_completion(&s.agent_id, &req).await {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(result.response).unwrap()),
+        )
+            .into_response(),
+        Err(ferris_common::FerrisError::Inference(msg)) if msg.contains("at capacity") => {
+            (StatusCode::SERVICE_UNAVAILABLE, msg).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    }
+}
+
+async fn list_models(State(s): State<AppState>) -> impl IntoResponse {
+    match s.inference.list_models().await {
+        Ok(models) => {
+            let response = serde_json::json!({
+                "object": "list",
+                "data": models.iter().map(|m| serde_json::json!({
+                    "id": m.model_name,
+                    "object": "model",
+                    "owned_by": "local",
+                })).collect::<Vec<_>>(),
+            });
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(_) => {
+            let empty = serde_json::json!({"object": "list", "data": []});
+            (StatusCode::OK, Json(empty)).into_response()
+        }
     }
 }
