@@ -56,8 +56,9 @@ async fn main() {
     let registry = AgentRegistry::new(pool.clone(), ledger);
     let router = InferenceRouter::new(pool);
 
-    // Start background stale-agent sweep
     let registry_arc = Arc::new(registry);
+
+    // Background: stale-agent sweep (every 30s)
     let sweep_registry = registry_arc.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -65,6 +66,18 @@ async fn main() {
             interval.tick().await;
             if let Err(e) = sweep_registry.sweep_stale_agents().await {
                 tracing::error!(error = %e, "stale agent sweep failed");
+            }
+        }
+    });
+
+    // Background: availability rewards (every 60s, 10 millicredits per active agent)
+    let rewards_registry = registry_arc.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            if let Err(e) = rewards_registry.award_availability_batch(10).await {
+                tracing::error!(error = %e, "availability reward failed");
             }
         }
     });

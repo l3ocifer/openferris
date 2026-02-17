@@ -40,6 +40,8 @@ pub fn build_coordinator_app(state: AppState) -> Router {
         .route("/api/v1/status", get(coordinator_status))
         .route("/api/v1/wallet/balance", get(wallet_balance))
         .route("/api/v1/wallet/history", get(wallet_history))
+        .route("/api/v1/directory", get(directory))
+        .route("/dashboard/stats", get(dashboard_stats))
         .route("/v1/models", get(list_models))
         .route("/v1/chat/completions", post(chat_completions))
         .with_state(state)
@@ -155,8 +157,14 @@ async fn list_models(State(s): State<AppState>) -> impl IntoResponse {
 
 async fn chat_completions(
     State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<ChatCompletionRequest>,
 ) -> impl IntoResponse {
+    let consumer_id = headers
+        .get("X-Agent-Id")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
     // Step 1: Route to best provider
     let candidate = match s.router.route(&req.model, None).await {
         Ok(c) => c,
@@ -180,16 +188,65 @@ async fn chat_completions(
         Ok(resp) if resp.status().is_success() => {
             match resp.json::<ChatCompletionResponse>().await {
                 Ok(completion) => {
-                    // Step 3: Record settlement (fire-and-forget for now)
                     let job_id = uuid::Uuid::now_v7().to_string();
-                    tracing::info!(
-                        job_id,
-                        model = %req.model,
-                        provider = %candidate.agent_id,
-                        tokens_in = completion.usage.prompt_tokens,
-                        tokens_out = completion.usage.completion_tokens,
-                        "inference routed"
-                    );
+
+                    // Step 3: Settle credits if consumer is identified
+                    if let Some(consumer) = &consumer_id {
+                        let total_tokens = completion.usage.prompt_tokens
+                            + completion.usage.completion_tokens;
+                        // Price: 1 millicredit per token (simple flat rate for Phase 2-3)
+                        let amount_mc = total_tokens as i64;
+
+                        match s
+                            .registry
+                            .ledger()
+                            .settle_inference(
+                                consumer,
+                                &candidate.agent_id,
+                                amount_mc,
+                                &req.model,
+                                completion.usage.prompt_tokens,
+                                completion.usage.completion_tokens,
+                                &job_id,
+                            )
+                            .await
+                        {
+                            Ok(tx) => {
+                                // Successful inference: small reputation boost
+                                let _ = s
+                                    .registry
+                                    .adjust_reputation(&candidate.agent_id, 0.1)
+                                    .await;
+
+                                tracing::info!(
+                                    job_id,
+                                    tx_id = %tx.tx_id,
+                                    model = %req.model,
+                                    consumer = %consumer,
+                                    provider = %candidate.agent_id,
+                                    amount_mc,
+                                    fee_mc = tx.platform_fee_mc,
+                                    "inference settled"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    job_id,
+                                    error = %e,
+                                    "settlement failed (inference still served)"
+                                );
+                            }
+                        }
+                    } else {
+                        tracing::info!(
+                            job_id,
+                            model = %req.model,
+                            provider = %candidate.agent_id,
+                            tokens_in = completion.usage.prompt_tokens,
+                            tokens_out = completion.usage.completion_tokens,
+                            "inference routed (anonymous, no settlement)"
+                        );
+                    }
 
                     (StatusCode::OK, Json(serde_json::to_value(completion).unwrap()))
                         .into_response()
@@ -218,6 +275,65 @@ async fn chat_completions(
     }
 }
 
+async fn directory(State(s): State<AppState>) -> impl IntoResponse {
+    let rows = sqlx::query_as::<_, DirectoryEntry>(
+        "SELECT a.agent_id, a.status, a.reputation, a.tier, a.region,
+                a.gpu_model, a.cpu_cores, a.ram_mb,
+                (SELECT GROUP_CONCAT(m.model_name, ', ')
+                 FROM models m WHERE m.agent_id = a.agent_id) as models
+         FROM agents a
+         WHERE a.status = 'active'
+         ORDER BY a.reputation DESC",
+    )
+    .fetch_all(s.registry.pool())
+    .await;
+
+    match rows {
+        Ok(entries) => (StatusCode::OK, Json(serde_json::to_value(entries).unwrap())).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn dashboard_stats(State(s): State<AppState>) -> impl IntoResponse {
+    let active_agents: i64 = s.registry.active_agent_count().await.unwrap_or(0);
+    let models = s.router.list_models().await.unwrap_or_default();
+
+    let total_transactions: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
+            .fetch_one(s.registry.ledger().pool())
+            .await
+            .unwrap_or(0);
+
+    let total_volume_mc: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(amount_mc), 0) FROM transactions")
+            .fetch_one(s.registry.ledger().pool())
+            .await
+            .unwrap_or(0);
+
+    let total_fees_mc: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(platform_fee_mc), 0) FROM transactions")
+            .fetch_one(s.registry.ledger().pool())
+            .await
+            .unwrap_or(0);
+
+    let active_escrows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM escrow WHERE status = 'held'")
+            .fetch_one(s.registry.ledger().pool())
+            .await
+            .unwrap_or(0);
+
+    let stats = serde_json::json!({
+        "active_agents": active_agents,
+        "available_models": models.len(),
+        "total_transactions": total_transactions,
+        "total_volume_credits": total_volume_mc as f64 / 1000.0,
+        "total_fees_credits": total_fees_mc as f64 / 1000.0,
+        "active_escrows": active_escrows,
+    });
+
+    (StatusCode::OK, Json(stats)).into_response()
+}
+
 // ── Query params ────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
@@ -229,4 +345,17 @@ struct AgentQuery {
 struct HistoryQuery {
     agent_id: Option<String>,
     limit: Option<usize>,
+}
+
+#[derive(sqlx::FromRow, Serialize)]
+struct DirectoryEntry {
+    agent_id: String,
+    status: String,
+    reputation: f64,
+    tier: String,
+    region: Option<String>,
+    gpu_model: Option<String>,
+    cpu_cores: i64,
+    ram_mb: i64,
+    models: Option<String>,
 }

@@ -327,3 +327,63 @@ async fn coordinator_status_counts() {
     assert_eq!(body["active_agents"], 1);
     assert_eq!(body["available_models"], 1);
 }
+
+#[tokio::test]
+async fn directory_lists_active_agents() {
+    let (app, _pool) = setup().await;
+    let reg = test_register_request("agent-dir");
+
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&reg).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::get("/api/v1/directory")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    let entries = body.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["agent_id"], "agent-dir");
+    assert_eq!(entries[0]["status"], "active");
+    assert!(entries[0]["reputation"].as_f64().unwrap() > 0.0);
+}
+
+#[tokio::test]
+async fn dashboard_stats_endpoint() {
+    let (app, _pool) = setup().await;
+    let reg = test_register_request("agent-dash");
+
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&reg).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::get("/dashboard/stats")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    assert_eq!(body["active_agents"], 1);
+    // Registration creates a signup_bonus transaction
+    assert!(body["total_transactions"].as_i64().unwrap() >= 1);
+}

@@ -176,6 +176,61 @@ impl AgentRegistry {
             .map_err(|e| FerrisError::Database(e.to_string()))
     }
 
+    /// Adjust an agent's reputation (positive for success, negative for failure).
+    pub async fn adjust_reputation(
+        &self,
+        agent_id: &str,
+        delta: f64,
+    ) -> Result<f64> {
+        let new_rep: f64 = sqlx::query_scalar(
+            "UPDATE agents SET reputation = MIN(MAX(reputation + ?, 0.0), 100.0)
+             WHERE agent_id = ?
+             RETURNING reputation",
+        )
+        .bind(delta)
+        .bind(agent_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?
+        .ok_or_else(|| FerrisError::NotFound(format!("agent: {agent_id}")))?;
+
+        if delta < 0.0 {
+            warn!(agent_id, delta, new_rep, "reputation penalty");
+        }
+
+        Ok(new_rep)
+    }
+
+    /// Award availability credits to all active agents (called periodically).
+    pub async fn award_availability_batch(&self, amount_per_agent_mc: i64) -> Result<u32> {
+        let active_agents: Vec<String> =
+            sqlx::query_scalar("SELECT agent_id FROM agents WHERE status = 'active'")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        let mut awarded = 0u32;
+        for agent_id in &active_agents {
+            if self
+                .ledger
+                .award_availability(agent_id, amount_per_agent_mc)
+                .await
+                .is_ok()
+            {
+                awarded += 1;
+            }
+        }
+
+        if awarded > 0 {
+            info!(
+                awarded,
+                amount_per_agent_mc, "availability rewards distributed"
+            );
+        }
+
+        Ok(awarded)
+    }
+
     async fn upsert_model(&self, agent_id: &str, model: &ModelInfo) -> Result<()> {
         sqlx::query(
             "INSERT INTO models (agent_id, model_name, model_family, parameter_count_b,
