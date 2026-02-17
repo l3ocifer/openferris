@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
@@ -32,6 +33,24 @@ enum Commands {
         #[arg(long, default_value_t = 8420)]
         port: u16,
     },
+    /// Register with the coordinator network
+    Join {
+        /// Coordinator URL override
+        #[arg(long)]
+        coordinator_url: Option<String>,
+        /// Node's public endpoint URL for receiving inference requests
+        #[arg(long)]
+        endpoint_url: Option<String>,
+        /// Region identifier (e.g. "us-east")
+        #[arg(long)]
+        region: Option<String>,
+    },
+    /// Query credit balance from the coordinator
+    Balance {
+        /// Coordinator URL override
+        #[arg(long)]
+        coordinator_url: Option<String>,
+    },
     /// Show node status and resources
     Status,
 }
@@ -55,6 +74,14 @@ async fn main() {
             host,
             port,
         } => cmd_serve(&data_dir, transport.as_deref(), &host, port).await,
+        Commands::Join {
+            coordinator_url,
+            endpoint_url,
+            region,
+        } => cmd_join(&data_dir, coordinator_url.as_deref(), endpoint_url.as_deref(), region.as_deref()).await,
+        Commands::Balance { coordinator_url } => {
+            cmd_balance(&data_dir, coordinator_url.as_deref()).await
+        }
         Commands::Status => cmd_status(&data_dir).await,
     };
 
@@ -125,14 +152,14 @@ async fn cmd_serve(
             tracing::info!(agent_id = %identity.agent_id, "starting MCP server (stdio)");
             let objects_dir = data_dir.join("objects");
             let memory =
-                std::sync::Arc::new(ferris_memory::MemoryStore::new(pool.clone(), config.memory.max_entries));
-            let storage = std::sync::Arc::new(ferris_storage::ObjectStore::new(
+                Arc::new(ferris_memory::MemoryStore::new(pool.clone(), config.memory.max_entries));
+            let storage = Arc::new(ferris_storage::ObjectStore::new(
                 pool.clone(),
                 objects_dir,
                 config.storage.max_mb,
             ));
             let tasks =
-                std::sync::Arc::new(ferris_tasks::TaskScheduler::new(pool, config.tasks.max_scheduled));
+                Arc::new(ferris_tasks::TaskScheduler::new(pool, config.tasks.max_scheduled));
 
             ferris_mcp::serve_stdio(identity.agent_id, memory, storage, tasks).await
         }
@@ -144,6 +171,118 @@ async fn cmd_serve(
             "unknown transport: {other} (expected 'stdio' or 'http')"
         ))),
     }
+}
+
+async fn cmd_join(
+    data_dir: &Path,
+    coordinator_url: Option<&str>,
+    endpoint_url: Option<&str>,
+    region: Option<&str>,
+) -> ferris_common::Result<()> {
+    let config = ferris_core::load_config(data_dir)?;
+    let db_path = data_dir.join("ferris.db");
+
+    if !db_path.exists() {
+        return Err(ferris_common::FerrisError::Config(
+            "node not initialized — run `ferris init` first".into(),
+        ));
+    }
+
+    let pool = ferris_core::init_pool(&db_path).await?;
+    let identity = ferris_core::identity::Identity::load(&pool)
+        .await?
+        .ok_or_else(|| {
+            ferris_common::FerrisError::Config(
+                "identity missing — run `ferris init` first".into(),
+            )
+        })?;
+
+    let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
+    let agent_id = identity.agent_id.clone();
+    let public_key = identity.public_key_bytes().to_vec();
+    let client = ferris_net::CoordinatorClient::new(url, &agent_id, identity.signing_key);
+
+    let resources = ferris_core::resources::detect();
+
+    // Discover local Ollama models
+    let ollama = ferris_inference::OllamaProxy::new("http://localhost:11434", 4);
+    let models = match ollama.list_models().await {
+        Ok(m) => {
+            println!("detected {} local models", m.len());
+            m
+        }
+        Err(_) => {
+            println!("no Ollama instance detected (continuing without models)");
+            vec![]
+        }
+    };
+
+    let req = ferris_common::RegisterRequest {
+        agent_id: agent_id.clone(),
+        public_key,
+        resources,
+        models,
+        contribute_gpu: config.network.contribute_gpu,
+        contribute_storage: config.network.contribute_storage,
+        contribute_cpu: config.network.contribute_cpu,
+        max_concurrent_requests: config.network.max_concurrent_requests,
+        endpoint_url: endpoint_url.map(String::from),
+        region: region.map(String::from),
+    };
+
+    let resp = client.register(&req).await?;
+    println!("registration: {}", resp.message);
+    if resp.signup_bonus_mc > 0 {
+        println!(
+            "signup bonus: {} credits",
+            resp.signup_bonus_mc as f64 / 1000.0
+        );
+    }
+
+    pool.close().await;
+    Ok(())
+}
+
+async fn cmd_balance(
+    data_dir: &Path,
+    coordinator_url: Option<&str>,
+) -> ferris_common::Result<()> {
+    let config = ferris_core::load_config(data_dir)?;
+    let db_path = data_dir.join("ferris.db");
+
+    if !db_path.exists() {
+        return Err(ferris_common::FerrisError::Config(
+            "node not initialized — run `ferris init` first".into(),
+        ));
+    }
+
+    let pool = ferris_core::init_pool(&db_path).await?;
+    let identity = ferris_core::identity::Identity::load(&pool)
+        .await?
+        .ok_or_else(|| {
+            ferris_common::FerrisError::Config(
+                "identity missing — run `ferris init` first".into(),
+            )
+        })?;
+
+    let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
+    let client = ferris_net::CoordinatorClient::new(url, &identity.agent_id, identity.signing_key.clone());
+
+    let balance = client.get_balance().await?;
+    let soft = balance.soft_balance_mc as f64 / 1000.0;
+    let hard = balance.hard_balance_mc as f64 / 1000.0;
+
+    println!("Credit Balance");
+    println!("──────────────");
+    println!("  soft credits:  {soft:.3} (non-transferable)");
+    println!("  hard credits:  {hard:.3} (earned, transferable)");
+    println!(
+        "  total:         {:.3}",
+        (balance.soft_balance_mc + balance.hard_balance_mc) as f64 / 1000.0
+    );
+
+    pool.close().await;
+    Ok(())
 }
 
 async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
@@ -175,6 +314,15 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
             .await
             .unwrap_or(0);
 
+    // Check Ollama
+    let ollama = ferris_inference::OllamaProxy::new("http://localhost:11434", 4);
+    let ollama_status = if ollama.health_check().await.unwrap_or(false) {
+        let models = ollama.list_models().await.unwrap_or_default();
+        format!("running ({} models)", models.len())
+    } else {
+        "not detected".into()
+    };
+
     println!("OpenFerris Node Status");
     println!("──────────────────────");
     match identity {
@@ -190,6 +338,7 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
     if let Some(gpu) = &resources.gpu {
         println!("  gpu:          {}", gpu.name);
     }
+    println!("  ollama:       {ollama_status}");
     println!();
     println!("Data:");
     println!("  memories:     {mem_count}");
