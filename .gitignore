@@ -1,0 +1,5 @@
+.DS_Store
+references/
+*.tmp
+setup.sh
+bootstrap.sh
