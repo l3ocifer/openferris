@@ -1,0 +1,37 @@
+[package]
+name = "ferris-coordinator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "BUSL-1.1"
+
+[dependencies]
+ferris-common = { path = "../ferris-common" }
+ferris-credits = { path = "../ferris-credits" }
+ferris-inference = { path = "../ferris-inference" }
+axum.workspace = true
+base64.workspace = true
+clap.workspace = true
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[lib]
+name = "ferris_coordinator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferris-coordinator"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -25,6 +25,18 @@ pub enum FerrisError {
 
     #[error("capacity exceeded: {0}")]
     CapacityExceeded(String),
+
+    #[error("network error: {0}")]
+    Network(String),
+
+    #[error("auth error: {0}")]
+    Auth(String),
+
+    #[error("insufficient credits: {0}")]
+    InsufficientCredits(String),
+
+    #[error("inference error: {0}")]
+    Inference(String),
 }
 
 pub type Result<T> = std::result::Result<T, FerrisError>;
@@ -38,6 +50,8 @@ pub struct FerrisConfig {
     pub memory: MemoryConfig,
     pub storage: StorageConfig,
     pub tasks: TasksConfig,
+    #[serde(default)]
+    pub network: NetworkConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +81,29 @@ pub struct TasksConfig {
     pub max_scheduled: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    pub coordinator_url: String,
+    pub heartbeat_interval_secs: u64,
+    pub contribute_gpu: bool,
+    pub contribute_storage: bool,
+    pub contribute_cpu: bool,
+    pub max_concurrent_requests: u32,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            coordinator_url: "https://api.openferris.dev".into(),
+            heartbeat_interval_secs: 30,
+            contribute_gpu: true,
+            contribute_storage: true,
+            contribute_cpu: true,
+            max_concurrent_requests: 4,
+        }
+    }
+}
+
 impl Default for FerrisConfig {
     fn default() -> Self {
         Self {
@@ -81,6 +118,7 @@ impl Default for FerrisConfig {
             memory: MemoryConfig { max_entries: 1000 },
             storage: StorageConfig { max_mb: 100 },
             tasks: TasksConfig { max_scheduled: 10 },
+            network: NetworkConfig::default(),
         }
     }
 }
@@ -111,6 +149,86 @@ pub struct GpuInfo {
     pub vram_mb: u64,
 }
 
+// ── Protocol types (node ↔ coordinator) ─────────────────────────────────
+
+/// Registration request from node to coordinator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRequest {
+    pub agent_id: String,
+    pub public_key: Vec<u8>,
+    pub resources: ResourceManifest,
+    pub models: Vec<ModelInfo>,
+    pub contribute_gpu: bool,
+    pub contribute_storage: bool,
+    pub contribute_cpu: bool,
+    pub max_concurrent_requests: u32,
+    pub endpoint_url: Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    pub accepted: bool,
+    pub signup_bonus_mc: i64,
+    pub message: String,
+}
+
+/// Heartbeat from node to coordinator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeartbeatRequest {
+    pub agent_id: String,
+    pub resources: ResourceManifest,
+    pub models: Vec<ModelInfo>,
+    pub current_requests: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeartbeatResponse {
+    pub status: String,
+    pub queued_messages: Vec<serde_json::Value>,
+}
+
+/// Model info reported by a node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub model_name: String,
+    pub model_family: Option<String>,
+    pub parameter_count_b: Option<f64>,
+    pub quantization: Option<String>,
+    pub is_hot: bool,
+    pub avg_tokens_sec: Option<f64>,
+}
+
+/// Wallet balance response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletBalance {
+    pub agent_id: String,
+    pub soft_balance_mc: i64,
+    pub hard_balance_mc: i64,
+    pub total_earned_soft_mc: i64,
+    pub total_earned_hard_mc: i64,
+    pub total_spent_mc: i64,
+}
+
+/// Settlement report from node after serving inference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementReport {
+    pub job_id: String,
+    pub agent_id: String,
+    pub model_name: String,
+    pub tokens_in: u32,
+    pub tokens_out: u32,
+    pub duration_ms: u64,
+}
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+pub const PLATFORM_FEE_PERCENT: u32 = 15;
+pub const SIGNUP_BONUS_MC: i64 = 100_000; // 100 credits in millicredits
+pub const HEARTBEAT_TIMEOUT_SECS: i64 = 90;
+pub const EVICTION_TIMEOUT_SECS: i64 = 300;
+pub const DEFAULT_REPUTATION: f64 = 50.0;
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 pub fn unix_timestamp() -> i64 {
@@ -118,4 +236,9 @@ pub fn unix_timestamp() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_secs() as i64
+}
+
+/// Calculate platform fee for a transaction amount (in millicredits).
+pub fn platform_fee(amount_mc: i64) -> i64 {
+    (amount_mc * PLATFORM_FEE_PERCENT as i64) / 100
 }
