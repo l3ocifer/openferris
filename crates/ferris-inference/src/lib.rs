@@ -232,3 +232,36 @@ fn parse_param_size(s: &str) -> Option<f64> {
         s.parse().ok()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    #[test]
+    fn parse_param_size_known_inputs() {
+        assert_eq!(parse_param_size("7B"), Some(7.0));
+        assert_eq!(parse_param_size("13B"), Some(13.0));
+        assert_eq!(parse_param_size("70B"), Some(70.0));
+        assert_eq!(parse_param_size("0.5B"), Some(0.5));
+        assert_eq!(parse_param_size("abc"), None);
+        assert_eq!(parse_param_size(""), None);
+    }
+
+    #[test]
+    fn request_guard_decrements_on_drop() {
+        let counter = Arc::new(AtomicU32::new(1));
+        {
+            let _guard = RequestGuard(counter.clone());
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn ollama_proxy_current_load_starts_at_zero() {
+        let proxy = OllamaProxy::new("http://localhost:11434", 4);
+        assert_eq!(proxy.current_load(), 0);
+    }
+}

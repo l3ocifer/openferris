@@ -21,16 +21,19 @@ pub fn detect() -> ResourceManifest {
         ram_mb,
         storage_avail_mb,
         gpu: detect_gpu(),
-        ollama_models: vec![],
     }
 }
 
 fn detect_gpu() -> Option<GpuInfo> {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
+        // Apple Silicon uses unified memory — report total RAM as VRAM
+        // since GPU and CPU share the same memory pool.
+        let sys = System::new_all();
+        let vram_mb = sys.total_memory() / (1024 * 1024);
         return Some(GpuInfo {
             name: "Apple Silicon".into(),
-            vram_mb: 0,
+            vram_mb,
         });
     }
 

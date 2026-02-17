@@ -38,6 +38,11 @@ impl CoordinatorClient {
     }
 
     /// Sign a JSON payload with Ed25519 and return the base64-encoded signature.
+    #[cfg(test)]
+    pub(crate) fn sign_payload_for_test(&self, body: &[u8]) -> String {
+        self.sign_payload(body)
+    }
+
     fn sign_payload(&self, body: &[u8]) -> String {
         let signature = self.signing_key.sign(body);
         STANDARD.encode(signature.to_bytes())
@@ -170,4 +175,34 @@ pub async fn start_heartbeat_loop(
     });
 
     shutdown_tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    #[test]
+    fn sign_payload_produces_valid_signature() {
+        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+        let client = CoordinatorClient::new("http://localhost:9999", "test-agent", signing_key);
+
+        let payload = b"hello, ferris!";
+        let sig_b64 = client.sign_payload_for_test(payload);
+
+        let sig_bytes = STANDARD.decode(&sig_b64).expect("valid base64");
+        let signature = Signature::from_bytes(
+            &sig_bytes
+                .try_into()
+                .expect("signature should be 64 bytes"),
+        );
+
+        verifying_key
+            .verify(payload, &signature)
+            .expect("signature should be valid");
+    }
 }

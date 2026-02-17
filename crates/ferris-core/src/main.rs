@@ -205,7 +205,10 @@ async fn cmd_join(
     let resources = ferris_core::resources::detect();
 
     // Discover local Ollama models
-    let ollama = ferris_inference::OllamaProxy::new("http://localhost:11434", 4);
+    let ollama = ferris_inference::OllamaProxy::new(
+        &config.inference.ollama_url,
+        config.inference.max_concurrent_requests,
+    );
     let models = match ollama.list_models().await {
         Ok(m) => {
             println!("detected {} local models", m.len());
@@ -225,7 +228,7 @@ async fn cmd_join(
         contribute_gpu: config.network.contribute_gpu,
         contribute_storage: config.network.contribute_storage,
         contribute_cpu: config.network.contribute_cpu,
-        max_concurrent_requests: config.network.max_concurrent_requests,
+        max_concurrent_requests: config.inference.max_concurrent_requests,
         endpoint_url: endpoint_url.map(String::from),
         region: region.map(String::from),
     };
@@ -286,6 +289,7 @@ async fn cmd_balance(
 }
 
 async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
+    let config = ferris_core::load_config(data_dir)?;
     let db_path = data_dir.join("ferris.db");
 
     if !db_path.exists() {
@@ -315,7 +319,10 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
             .unwrap_or(0);
 
     // Check Ollama
-    let ollama = ferris_inference::OllamaProxy::new("http://localhost:11434", 4);
+    let ollama = ferris_inference::OllamaProxy::new(
+        &config.inference.ollama_url,
+        config.inference.max_concurrent_requests,
+    );
     let ollama_status = if ollama.health_check().await.unwrap_or(false) {
         let models = ollama.list_models().await.unwrap_or_default();
         format!("running ({} models)", models.len())

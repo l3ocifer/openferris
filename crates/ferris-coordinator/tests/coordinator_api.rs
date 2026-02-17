@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+use ed25519_dalek::{Signer, SigningKey};
 use ferris_common::{
     HeartbeatRequest, ModelInfo, RegisterRequest, ResourceManifest, SIGNUP_BONUS_MC,
 };
@@ -97,21 +100,46 @@ fn json_request(method: Method, uri: &str, body: serde_json::Value) -> Request<B
         .unwrap()
 }
 
+fn signed_json_request(
+    method: Method,
+    uri: &str,
+    body: serde_json::Value,
+    agent_id: &str,
+    signing_key: &SigningKey,
+) -> Request<Body> {
+    let body_bytes = serde_json::to_vec(&body).unwrap();
+    let signature = signing_key.sign(&body_bytes);
+    let sig_b64 = STANDARD.encode(signature.to_bytes());
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Content-Type", "application/json")
+        .header("X-Agent-Id", agent_id)
+        .header("X-Signature", sig_b64)
+        .body(Body::from(body_bytes))
+        .unwrap()
+}
+
 async fn json_body(resp: axum::response::Response) -> serde_json::Value {
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
 }
 
+fn test_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[1u8; 32])
+}
+
 fn test_register_request(agent_id: &str) -> RegisterRequest {
+    let key = test_signing_key();
+    let public_key = key.verifying_key().to_bytes().to_vec();
     RegisterRequest {
         agent_id: agent_id.into(),
-        public_key: vec![0u8; 32],
+        public_key,
         resources: ResourceManifest {
             cpu_cores: 8,
             ram_mb: 16384,
             storage_avail_mb: 100000,
             gpu: None,
-            ollama_models: vec![],
         },
         models: vec![ModelInfo {
             model_name: "llama3:8b".into(),
@@ -191,6 +219,7 @@ async fn register_idempotent() {
 #[tokio::test]
 async fn heartbeat_updates_status() {
     let (app, _pool) = setup().await;
+    let signing_key = test_signing_key();
     let reg = test_register_request("agent-hb");
 
     app.clone()
@@ -210,10 +239,12 @@ async fn heartbeat_updates_status() {
     };
 
     let resp = app
-        .oneshot(json_request(
+        .oneshot(signed_json_request(
             Method::POST,
             "/api/v1/heartbeat",
             serde_json::to_value(&hb).unwrap(),
+            "agent-hb",
+            &signing_key,
         ))
         .await
         .unwrap();
@@ -223,8 +254,9 @@ async fn heartbeat_updates_status() {
 }
 
 #[tokio::test]
-async fn heartbeat_unregistered_returns_404() {
+async fn heartbeat_unregistered_returns_unauthorized() {
     let (app, _pool) = setup().await;
+    let signing_key = test_signing_key();
     let hb = HeartbeatRequest {
         agent_id: "nonexistent".into(),
         resources: ResourceManifest {
@@ -232,21 +264,23 @@ async fn heartbeat_unregistered_returns_404() {
             ram_mb: 8192,
             storage_avail_mb: 50000,
             gpu: None,
-            ollama_models: vec![],
         },
         models: vec![],
         current_requests: 0,
     };
 
     let resp = app
-        .oneshot(json_request(
+        .oneshot(signed_json_request(
             Method::POST,
             "/api/v1/heartbeat",
             serde_json::to_value(&hb).unwrap(),
+            "nonexistent",
+            &signing_key,
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    // Agent doesn't exist, so signature verification returns 401
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

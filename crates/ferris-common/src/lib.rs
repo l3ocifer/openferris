@@ -52,6 +52,8 @@ pub struct FerrisConfig {
     pub tasks: TasksConfig,
     #[serde(default)]
     pub network: NetworkConfig,
+    #[serde(default)]
+    pub inference: InferenceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +90,6 @@ pub struct NetworkConfig {
     pub contribute_gpu: bool,
     pub contribute_storage: bool,
     pub contribute_cpu: bool,
-    pub max_concurrent_requests: u32,
 }
 
 impl Default for NetworkConfig {
@@ -99,6 +100,20 @@ impl Default for NetworkConfig {
             contribute_gpu: true,
             contribute_storage: true,
             contribute_cpu: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InferenceConfig {
+    pub ollama_url: String,
+    pub max_concurrent_requests: u32,
+}
+
+impl Default for InferenceConfig {
+    fn default() -> Self {
+        Self {
+            ollama_url: "http://localhost:11434".into(),
             max_concurrent_requests: 4,
         }
     }
@@ -119,6 +134,7 @@ impl Default for FerrisConfig {
             storage: StorageConfig { max_mb: 100 },
             tasks: TasksConfig { max_scheduled: 10 },
             network: NetworkConfig::default(),
+            inference: InferenceConfig::default(),
         }
     }
 }
@@ -126,21 +142,11 @@ impl Default for FerrisConfig {
 // ── Types ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentId(pub String);
-
-impl std::fmt::Display for AgentId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceManifest {
     pub cpu_cores: u16,
     pub ram_mb: u64,
     pub storage_avail_mb: u64,
     pub gpu: Option<GpuInfo>,
-    pub ollama_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

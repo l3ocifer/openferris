@@ -94,4 +94,12 @@ fn apply_env_overrides(config: &mut FerrisConfig) {
             config.network.heartbeat_interval_secs = n;
         }
     }
+    if let Ok(v) = std::env::var("FERRIS_OLLAMA_URL") {
+        config.inference.ollama_url = v;
+    }
+    if let Ok(v) = std::env::var("FERRIS_MAX_CONCURRENT_REQUESTS") {
+        if let Ok(n) = v.parse() {
+            config.inference.max_concurrent_requests = n;
+        }
+    }
 }

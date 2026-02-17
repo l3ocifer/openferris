@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS identity (
     agent_id TEXT PRIMARY KEY,
     public_key BLOB NOT NULL,
-    secret_key_enc BLOB NOT NULL,
+    secret_key_bytes BLOB NOT NULL,
     created_at INTEGER NOT NULL
 );
 

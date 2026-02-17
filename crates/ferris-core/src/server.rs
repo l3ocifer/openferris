@@ -112,31 +112,15 @@ pub async fn run_server(
 ) -> ferris_common::Result<()> {
     let objects_dir = PathBuf::from(&config.agent.data_dir).join("objects");
 
-    let state = AppState {
-        memory: Arc::new(MemoryStore::new(pool.clone(), config.memory.max_entries)),
-        storage: Arc::new(ObjectStore::new(pool.clone(), objects_dir, config.storage.max_mb)),
-        tasks: Arc::new(TaskScheduler::new(pool, config.tasks.max_scheduled)),
-        inference: Arc::new(OllamaProxy::new(
-            "http://localhost:11434",
-            config.network.max_concurrent_requests,
-        )),
-        agent_id: agent_id.into(),
-    };
+    let memory = Arc::new(MemoryStore::new(pool.clone(), config.memory.max_entries));
+    let storage = Arc::new(ObjectStore::new(pool.clone(), objects_dir, config.storage.max_mb));
+    let tasks = Arc::new(TaskScheduler::new(pool, config.tasks.max_scheduled));
+    let inference = Arc::new(OllamaProxy::new(
+        &config.inference.ollama_url,
+        config.inference.max_concurrent_requests,
+    ));
 
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/api/v1/status", get(status))
-        .route("/api/v1/memory/remember", post(remember))
-        .route("/api/v1/memory/recall", post(recall))
-        .route("/api/v1/memory/{key}", delete(forget))
-        .route("/api/v1/storage/store", post(store))
-        .route("/api/v1/storage", get(list_files))
-        .route("/api/v1/storage/{file_id}", get(retrieve))
-        .route("/api/v1/tasks", post(schedule_task).get(list_tasks))
-        .route("/api/v1/tasks/{task_id}", delete(cancel_task))
-        .route("/v1/chat/completions", post(chat_completions))
-        .route("/v1/models", get(list_models))
-        .with_state(state);
+    let app = build_app(memory, storage, tasks, inference, agent_id);
 
     let addr: SocketAddr = format!("{host}:{port}")
         .parse()
@@ -157,13 +141,15 @@ pub fn build_app(
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
+    inference: Arc<OllamaProxy>,
+    agent_id: &str,
 ) -> Router {
     let state = AppState {
         memory,
         storage,
         tasks,
-        inference: Arc::new(OllamaProxy::new("http://localhost:11434", 4)),
-        agent_id: "test-agent".into(),
+        inference,
+        agent_id: agent_id.into(),
     };
 
     Router::new()
@@ -219,7 +205,10 @@ async fn remember(
     Json(req): Json<RememberReq>,
 ) -> impl IntoResponse {
     match s.memory.remember(&req.key, &req.value, req.metadata).await {
-        Ok(entry) => (StatusCode::OK, Json(serde_json::to_value(entry).unwrap())).into_response(),
+        Ok(entry) => match serde_json::to_value(&entry) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -230,9 +219,10 @@ async fn recall(
 ) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10);
     match s.memory.recall(&req.query, limit).await {
-        Ok(entries) => {
-            (StatusCode::OK, Json(serde_json::to_value(entries).unwrap())).into_response()
-        }
+        Ok(entries) => match serde_json::to_value(&entries) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -326,9 +316,10 @@ async fn schedule_task(
 
 async fn list_tasks(State(s): State<AppState>) -> impl IntoResponse {
     match s.tasks.list_tasks().await {
-        Ok(tasks) => {
-            (StatusCode::OK, Json(serde_json::to_value(tasks).unwrap())).into_response()
-        }
+        Ok(tasks) => match serde_json::to_value(&tasks) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -351,11 +342,10 @@ async fn chat_completions(
     Json(req): Json<ChatCompletionRequest>,
 ) -> impl IntoResponse {
     match s.inference.chat_completion(&s.agent_id, &req).await {
-        Ok(result) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(result.response).unwrap()),
-        )
-            .into_response(),
+        Ok(result) => match serde_json::to_value(&result.response) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(ferris_common::FerrisError::Inference(msg)) if msg.contains("at capacity") => {
             (StatusCode::SERVICE_UNAVAILABLE, msg).into_response()
         }

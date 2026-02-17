@@ -523,7 +523,7 @@ pub enum TransactionType {
 CREATE TABLE identity (
     agent_id        TEXT PRIMARY KEY,
     public_key      BLOB NOT NULL,          -- Ed25519 public key (32 bytes)
-    secret_key_enc  BLOB NOT NULL,          -- Encrypted Ed25519 secret key
+    secret_key_bytes BLOB NOT NULL,          -- Ed25519 secret key (32 bytes)
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

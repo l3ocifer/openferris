@@ -10,6 +10,7 @@ use ferris_common::{HeartbeatRequest, RegisterRequest};
 use ferris_inference::{ChatCompletionRequest, ChatCompletionResponse};
 use serde::Serialize;
 
+use crate::auth::verify_agent_signature;
 use crate::registry::AgentRegistry;
 use crate::router::InferenceRouter;
 
@@ -75,17 +76,42 @@ async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> impl IntoResponse {
     match s.registry.register(&req).await {
-        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())).into_response(),
+        Ok(resp) => match serde_json::to_value(&resp) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
 async fn heartbeat(
     State(s): State<AppState>,
-    Json(req): Json<HeartbeatRequest>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    let agent_id = match headers.get("X-Agent-Id").and_then(|v| v.to_str().ok()) {
+        Some(id) => id,
+        None => return (StatusCode::BAD_REQUEST, "X-Agent-Id header required").into_response(),
+    };
+    let signature = match headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        Some(s) => s,
+        None => return (StatusCode::BAD_REQUEST, "X-Signature header required").into_response(),
+    };
+
+    if let Err(e) = verify_agent_signature(s.registry.pool(), agent_id, signature, &body).await {
+        return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+    }
+
+    let req: HeartbeatRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
     match s.registry.heartbeat(&req).await {
-        Ok(resp) => (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())).into_response(),
+        Ok(resp) => match serde_json::to_value(&resp) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(ferris_common::FerrisError::NotFound(msg)) => {
             (StatusCode::NOT_FOUND, msg).into_response()
         }
@@ -106,17 +132,36 @@ async fn coordinator_status(State(s): State<AppState>) -> impl IntoResponse {
 
 async fn wallet_balance(
     State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Query(params): axum::extract::Query<AgentQuery>,
 ) -> impl IntoResponse {
-    let agent_id = match params.agent_id {
+    let agent_id = match headers
+        .get("X-Agent-Id")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .or(params.agent_id)
+    {
         Some(id) => id,
         None => return (StatusCode::BAD_REQUEST, "agent_id required").into_response(),
     };
 
-    match s.registry.ledger().get_balance(&agent_id).await {
-        Ok(balance) => {
-            (StatusCode::OK, Json(serde_json::to_value(balance).unwrap())).into_response()
+    if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        let body = headers
+            .get("X-Timestamp")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if let Err(e) =
+            verify_agent_signature(s.registry.pool(), &agent_id, sig, body.as_bytes()).await
+        {
+            return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
         }
+    }
+
+    match s.registry.ledger().get_balance(&agent_id).await {
+        Ok(balance) => match serde_json::to_value(&balance) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(ferris_common::FerrisError::NotFound(msg)) => {
             (StatusCode::NOT_FOUND, msg).into_response()
         }
@@ -126,18 +171,38 @@ async fn wallet_balance(
 
 async fn wallet_history(
     State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Query(params): axum::extract::Query<HistoryQuery>,
 ) -> impl IntoResponse {
-    let agent_id = match params.agent_id {
+    let agent_id = match headers
+        .get("X-Agent-Id")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .or(params.agent_id)
+    {
         Some(id) => id,
         None => return (StatusCode::BAD_REQUEST, "agent_id required").into_response(),
     };
+
+    if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        let body = headers
+            .get("X-Timestamp")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if let Err(e) =
+            verify_agent_signature(s.registry.pool(), &agent_id, sig, body.as_bytes()).await
+        {
+            return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+        }
+    }
+
     let limit = params.limit.unwrap_or(20);
 
     match s.registry.ledger().get_history(&agent_id, limit).await {
-        Ok(history) => {
-            (StatusCode::OK, Json(serde_json::to_value(history).unwrap())).into_response()
-        }
+        Ok(history) => match serde_json::to_value(&history) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -158,12 +223,27 @@ async fn list_models(State(s): State<AppState>) -> impl IntoResponse {
 async fn chat_completions(
     State(s): State<AppState>,
     headers: axum::http::HeaderMap,
-    Json(req): Json<ChatCompletionRequest>,
+    body: axum::body::Bytes,
 ) -> impl IntoResponse {
     let consumer_id = headers
         .get("X-Agent-Id")
         .and_then(|v| v.to_str().ok())
         .map(String::from);
+
+    if let Some(agent_id) = &consumer_id {
+        if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+            if let Err(e) =
+                verify_agent_signature(s.registry.pool(), agent_id, sig, &body).await
+            {
+                return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+            }
+        }
+    }
+
+    let req: ChatCompletionRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
 
     // Step 1: Route to best provider
     let candidate = match s.router.route(&req.model, None).await {
@@ -213,10 +293,13 @@ async fn chat_completions(
                         {
                             Ok(tx) => {
                                 // Successful inference: small reputation boost
-                                let _ = s
+                                if let Err(e) = s
                                     .registry
                                     .adjust_reputation(&candidate.agent_id, 0.1)
-                                    .await;
+                                    .await
+                                {
+                                    tracing::warn!(error = %e, "reputation adjustment failed");
+                                }
 
                                 tracing::info!(
                                     job_id,
@@ -248,8 +331,12 @@ async fn chat_completions(
                         );
                     }
 
-                    (StatusCode::OK, Json(serde_json::to_value(completion).unwrap()))
-                        .into_response()
+                    match serde_json::to_value(&completion) {
+                        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+                        Err(e) => {
+                            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                        }
+                    }
                 }
                 Err(e) => (
                     StatusCode::BAD_GATEWAY,
@@ -289,7 +376,10 @@ async fn directory(State(s): State<AppState>) -> impl IntoResponse {
     .await;
 
     match rows {
-        Ok(entries) => (StatusCode::OK, Json(serde_json::to_value(entries).unwrap())).into_response(),
+        Ok(entries) => match serde_json::to_value(&entries) {
+            Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }

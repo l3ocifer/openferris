@@ -14,3 +14,14 @@ max_mb = 100
 
 [tasks]
 max_scheduled = 10
+
+[network]
+coordinator_url = "https://api.openferris.dev"
+heartbeat_interval_secs = 30
+contribute_gpu = true
+contribute_storage = true
+contribute_cpu = true
+
+[inference]
+ollama_url = "http://localhost:11434"
+max_concurrent_requests = 4

@@ -8,3 +8,8 @@ Cargo.lock
 .env
 .idea/
 .vscode/
+*.code-workspace
+*.db
+*.db-wal
+*.db-shm
+.cursor/

@@ -8,9 +8,7 @@ authors.workspace = true
 [dependencies]
 ferris-common = { path = "../ferris-common" }
 serde.workspace = true
-serde_json.workspace = true
 sqlx.workspace = true
-tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

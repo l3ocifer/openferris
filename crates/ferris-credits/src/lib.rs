@@ -153,6 +153,9 @@ impl CreditLedger {
     }
 
     /// Settle an inference job: debit consumer, credit provider (minus platform fee).
+    ///
+    /// All balance checks and mutations are wrapped in a single SQLite
+    /// transaction (`BEGIN IMMEDIATE`) so the read-then-write is atomic.
     #[allow(clippy::too_many_arguments)]
     pub async fn settle_inference(
         &self,
@@ -169,9 +172,25 @@ impl CreditLedger {
         let fee = platform_fee(amount_mc);
         let provider_payout = amount_mc - fee;
 
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
+
         // Check consumer has enough balance (soft or hard)
-        let balance = self.get_balance(consumer_id).await?;
-        let total_available = balance.soft_balance_mc + balance.hard_balance_mc;
+        let row = sqlx::query(
+            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
+        )
+        .bind(consumer_id)
+        .fetch_optional(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?
+        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {consumer_id}")))?;
+
+        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
+        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
+        let total_available = soft_balance + hard_balance;
         if total_available < amount_mc {
             return Err(FerrisError::InsufficientCredits(format!(
                 "need {amount_mc} mc, have {total_available} mc"
@@ -179,7 +198,7 @@ impl CreditLedger {
         }
 
         // Debit from soft first, then hard
-        let soft_debit = amount_mc.min(balance.soft_balance_mc);
+        let soft_debit = amount_mc.min(soft_balance);
         let hard_debit = amount_mc - soft_debit;
 
         sqlx::query(
@@ -192,7 +211,7 @@ impl CreditLedger {
         .bind(hard_debit)
         .bind(amount_mc)
         .bind(consumer_id)
-        .execute(&self.pool)
+        .execute(&mut *txn)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
@@ -205,7 +224,7 @@ impl CreditLedger {
         .bind(provider_payout)
         .bind(provider_payout)
         .bind(provider_id)
-        .execute(&self.pool)
+        .execute(&mut *txn)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
@@ -226,9 +245,13 @@ impl CreditLedger {
         .bind(tokens_out as i64)
         .bind(job_id)
         .bind(fee)
-        .execute(&self.pool)
+        .execute(&mut *txn)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        txn.commit()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         Ok(Transaction {
             tx_id,
@@ -268,6 +291,9 @@ impl CreditLedger {
     }
 
     /// Place credits in escrow for a job.
+    ///
+    /// The balance check and debit are wrapped in a single SQLite transaction
+    /// so the read-then-write is atomic.
     pub async fn hold_escrow(
         &self,
         job_id: &str,
@@ -279,9 +305,25 @@ impl CreditLedger {
         let now = unix_timestamp();
         let escrow_id = Uuid::now_v7().to_string();
 
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
+
         // Check balance
-        let balance = self.get_balance(buyer_id).await?;
-        let total_available = balance.soft_balance_mc + balance.hard_balance_mc;
+        let row = sqlx::query(
+            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
+        )
+        .bind(buyer_id)
+        .fetch_optional(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?
+        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {buyer_id}")))?;
+
+        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
+        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
+        let total_available = soft_balance + hard_balance;
         if total_available < amount_mc {
             return Err(FerrisError::InsufficientCredits(format!(
                 "escrow requires {amount_mc} mc, have {total_available} mc"
@@ -289,7 +331,7 @@ impl CreditLedger {
         }
 
         // Debit from soft first, then hard
-        let soft_debit = amount_mc.min(balance.soft_balance_mc);
+        let soft_debit = amount_mc.min(soft_balance);
         let hard_debit = amount_mc - soft_debit;
 
         sqlx::query(
@@ -300,7 +342,7 @@ impl CreditLedger {
         .bind(soft_debit)
         .bind(hard_debit)
         .bind(buyer_id)
-        .execute(&self.pool)
+        .execute(&mut *txn)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
@@ -315,9 +357,13 @@ impl CreditLedger {
         .bind(amount_mc)
         .bind(now)
         .bind(now + ttl_secs)
-        .execute(&self.pool)
+        .execute(&mut *txn)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        txn.commit()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         Ok(EscrowEntry {
             escrow_id,

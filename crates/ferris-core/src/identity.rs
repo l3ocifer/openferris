@@ -35,7 +35,7 @@ impl Identity {
         let secret = self.signing_key.to_bytes().to_vec();
 
         sqlx::query(
-            "INSERT OR IGNORE INTO identity (agent_id, public_key, secret_key_enc, created_at)
+            "INSERT OR IGNORE INTO identity (agent_id, public_key, secret_key_bytes, created_at)
              VALUES (?, ?, ?, ?)",
         )
         .bind(&self.agent_id)
@@ -52,7 +52,7 @@ impl Identity {
     /// Load the node's identity from the database (returns None if uninitialized).
     pub async fn load(pool: &SqlitePool) -> Result<Option<Self>> {
         let row = sqlx::query(
-            "SELECT agent_id, secret_key_enc FROM identity LIMIT 1",
+            "SELECT agent_id, secret_key_bytes FROM identity LIMIT 1",
         )
         .fetch_optional(pool)
         .await
@@ -63,7 +63,7 @@ impl Identity {
         };
 
         let agent_id: String = row.get("agent_id");
-        let secret_bytes: Vec<u8> = row.get("secret_key_enc");
+        let secret_bytes: Vec<u8> = row.get("secret_key_bytes");
 
         let secret_array: [u8; 32] = secret_bytes
             .try_into()

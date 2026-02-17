@@ -91,7 +91,7 @@ Routes to Machine B (best match on model + latency + reliability)
 Machine B runs inference, returns result
   ↓
 Machine B earns 0.08 credits. Agent A's balance debited 0.08 credits.
-Platform keeps 10-20% routing fee.
+Platform keeps 15% routing fee.
 ```
 
 Same pattern for storage, compute, and agent-to-agent requests. The coordinator is a router, not a provider.
@@ -119,7 +119,7 @@ Credits are internal (a number in a database). No blockchain, no tokens, no SEC 
 - Task scheduling, premium features
 - Cash out via USDC (Phase 4)
 
-**Platform take:** 10-20% routing fee on all transactions. Same as OpenRouter.
+**Platform take:** 15% routing fee on all transactions.
 
 ### The Flywheel
 

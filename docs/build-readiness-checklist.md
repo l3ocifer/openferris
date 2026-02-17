@@ -3,7 +3,7 @@
 This document converts current docs into a build-start gate.
 
 Status legend:
-- [x] Locked
+- [x] Locked / Complete
 - [ ] Needs decision
 - [~] Drafted, needs implementation detail
 
@@ -24,159 +24,79 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
    - no external provider integrations
    - no cashout/topup
 
-## 2) Spec Conflicts To Resolve Before First Commit
+## 2) Spec Conflicts Resolved
 
-These are the current blockers for "ready to build".
+1. [x] Platform fee: fixed 15%.
+2. [x] Credit bootstrap: 100-credit signup bonus + ongoing availability rewards.
+3. [x] Routing formula: `reputation(0.40) + speed(0.25) + latency(0.20) + availability(0.15) + hot_bonus(0.10)`.
+4. [x] Reputation scale: `0.0..100.0` (stored as `REAL`), default 50.0.
+5. [x] Storage: local object store (Phase 1-3); optional R2 sync deferred.
+6. [x] Transport: HTTPS + SSE proxy via coordinator (Phase 2 default).
+7. [x] API namespace: `/v1/*` (OpenAI-compat), `/api/v1/*` (control), `/dashboard/*` (metrics).
+8. [x] Timeline: week-based roadmap.
 
-1. [x] Platform fee policy:
-   - Docs currently use both fixed `15%` and variable `10-20%`.
-   - Decision needed: one canonical rule for Phase 2.
-2. [x] Credit bootstrap policy:
-   - Docs include both "availability rewards" and "100 signup bonus".
-   - Decision needed: keep one, or keep both with exact ordering/rules.
-3. [x] Routing formula:
-   - Competing versions exist:
-     - hot/installed/latency/capacity/reputation weighting
-     - reputation/speed/latency/load plus hot bonus
-   - Decision needed: one canonical algorithm for implementation.
-4. [x] Reputation scale:
-   - Some docs use `0..100`, others `0.0..1.0`.
-   - Decision needed: canonical numeric range and storage type.
-5. [x] Storage positioning:
-   - "Distributed node-backed storage" vs "R2-backed storage in early phases".
-   - Decision needed: canonical statement for Phase 1-3.
-6. [x] Transport:
-   - "HTTPS/SSE proxy first" vs "QUIC/libp2p in early network phase".
-   - Decision needed: Phase 2 default transport and Phase 3 upgrade path.
-7. [x] API namespace:
-   - mixed endpoint families (`/agents/*`, `/api/v1/*`, `/v1/*`).
-   - Decision needed: one path convention for node, consumer, and dashboard APIs.
-8. [x] Timeline mismatch:
-   - some docs use week-based phases, one uses month-based phases.
-   - Decision needed: single roadmap timeline format.
+## 3) Data Model Frozen
 
-## 3) Canonical Data Model Freeze (Needed Before DB Migrations)
-
-1. [x] Agent identity format:
-   - UUID v7 vs derived key hash style.
-2. [x] Coordinator schema baseline:
-   - choose one canonical set of tables/columns for:
-     - `agents`
-     - `models` (or split `hot_models` + `installed_models`)
-     - `capabilities`
-     - `credits/balances`
-     - `transactions`
-     - `escrow`
-3. [x] Numeric types:
-   - define exact types for money/credits (`REAL` vs fixed-point integer).
-4. [x] Time format:
-   - define canonical timestamp format (`INTEGER unix` vs `TEXT datetime`).
+1. [x] Agent identity: UUID v7 + Ed25519 keypair.
+2. [x] Coordinator schema: `agents`, `models`, `capabilities`, `credits`, `transactions`, `escrow`.
+3. [x] Numeric types: millicredits as `INTEGER` (1 credit = 1000 mc).
+4. [x] Timestamps: `INTEGER` unix epoch seconds.
 
 ## 4) Build-Ready Engineering Baseline
 
-1. [x] Create workspace scaffold:
-   - root `Cargo.toml` workspace
-   - `crates/` directory with Phase 1 crates only:
-     - `ferris-common`
-     - `ferris-core`
-     - `ferris-memory`
-     - `ferris-storage`
-     - `ferris-tasks`
-     - `ferris-mcp`
-2. [x] Toolchain and quality gates:
-   - rust-toolchain pinned
-   - `clippy` and `rustfmt` config
-   - CI for `check`, `clippy`, `test`
-3. [x] Migration strategy:
-   - `sqlx` migrations directory
-   - initial node DB migration
-4. [x] Config strategy:
-   - canonical `config.toml`
-   - env override naming convention
-5. [x] Error strategy:
-   - shared `thiserror` enums in `ferris-common`
-   - no `anyhow` in shared APIs
+1. [x] Workspace scaffold with 10 crates.
+2. [x] Toolchain pinned, clippy/rustfmt config, CI workflows.
+3. [x] Migration strategy: `sqlx` for both node and coordinator.
+4. [x] Config strategy: TOML + env overrides for all sections.
+5. [x] Error strategy: shared `FerrisError` enum in `ferris-common`.
 
-## 5) Security/Trust Baseline For First Release
+## 5) Security/Trust Baseline
 
-1. [x] Identity:
-   - Ed25519 key generation and persistent storage format.
-2. [x] Request signing:
-   - canonical signed payload format for future coordinator calls.
-3. [x] Local secrets:
-   - define at-rest handling for private key.
-4. [x] Explicit trust statement:
-   - add one short "what we do and do not protect" section in README.
+1. [x] Ed25519 identity generation + persistent storage.
+2. [x] Request signing: node signs all coordinator requests.
+3. [x] Signature verification: coordinator verifies Ed25519 signatures on protected endpoints.
+4. [x] Local secrets: `secret_key_bytes` stored as plaintext in local SQLite (machine-local trust).
 
-## 6) Mobile Supply Readiness (Non-Blocking, Phase 2)
+## 6) Mobile Supply Readiness (Non-Blocking)
 
-1. [x] Mobile supply strategy documented (`docs/mobile-supply.md`).
-2. [x] Contribution tiers defined (T1-T5) with credit rates.
-3. [x] Coordinator schema extended for mobile nodes (`node_type`, `mobile_tier`, `device_model`).
-4. [x] Mobile-specific API endpoints defined in `docs/spec-v1.md`.
-5. [~] Android app architecture: Kotlin + JNI wrapper over `libferris`.
-6. [~] `libferris` mobile FFI surface designed (`MobileConfig`, contribution lifecycle).
-7. [ ] Android NDK cross-compilation target validated.
-8. [ ] iOS FFI compilation target validated.
-9. [x] Contribution policy defined (charging/WiFi/thermal safeguards).
-10. [x] Platform constraints documented (Android vs iOS limitations).
+1. [x] Mobile supply strategy documented.
+2. [x] Contribution tiers defined (T1-T5).
+3. [x] Coordinator schema extensible for mobile nodes.
+4. [x] Mobile-specific API endpoints specified.
+5. [~] Android app architecture: Kotlin + JNI over `libferris`.
+6. [~] `libferris` FFI surface designed.
+7. [ ] Android NDK cross-compilation validated.
+8. [ ] iOS FFI compilation validated.
+9. [x] Contribution policy defined.
+10. [x] Platform constraints documented.
 
-## 7) Definition of "Ready To Start Coding"
+## 7) Phase 1 Implementation Status — COMPLETE
 
-Coding should start once all of these are true:
-
-1. [x] Section 2 conflicts are resolved and documented in one source of truth.
-2. [x] Section 3 data model decisions are frozen.
-3. [x] Phase 1 scope is locked and accepted.
-4. [x] Workspace scaffold and CI are in place.
-5. [x] First milestone is narrowed to:
-   - `ferris init`
-   - `remember/recall/forget`
-   - local MCP serve command
-
-Source of truth for all locked decisions: `docs/spec-v1.md`.
-
-## 8) Phase 1 Implementation Status
-
-All Phase 1 deliverables are complete and verified.
-
-### Crates Implemented
+### Crates
 
 | Crate | Status | Tests |
 |-------|--------|-------|
-| `ferris-common` | Done | types, errors, config structs |
-| `ferris-core` | Done | CLI (`init`, `serve`, `status`), config, identity, resources, HTTP server |
-| `ferris-memory` | Done | 8 unit tests (CRUD, upsert, capacity, metadata, search) |
-| `ferris-storage` | Done | 6 unit tests (store/retrieve, dedup, capacity, blake3, listing) |
-| `ferris-tasks` | Done | 5 unit tests (schedule, cancel, capacity, listing) |
-| `ferris-mcp` | Done | 10 MCP tools wired to real backends via rmcp 0.16 |
-
-### Integration Tests
-
-| Test Suite | Tests | Coverage |
-|------------|-------|----------|
-| HTTP API (`tests/http_api.rs`) | 7 | health, status, memory CRUD, storage CRUD, tasks CRUD, 404 handling |
-
-### Quality Gates
-
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
-- [x] `cargo test --workspace` — 26/26 passing
-- [x] E2E smoke test: `ferris init` → `ferris serve --transport http` → curl all endpoints → verified
+| `ferris-common` | Done | shared types, errors, config, protocol types |
+| `ferris-core` | Done | CLI, config, identity, resources, HTTP server |
+| `ferris-memory` | Done | 8 unit tests |
+| `ferris-storage` | Done | 6 unit tests |
+| `ferris-tasks` | Done | 5 unit tests |
+| `ferris-mcp` | Done | 10 MCP tools via rmcp 0.16 |
 
 ### CLI Commands
 
-- `ferris init` — creates data dir, config.toml, SQLite DB, Ed25519 identity
-- `ferris serve --transport stdio` — MCP server for Claude/Cursor
-- `ferris serve --transport http` — REST dev server on configurable host:port
-- `ferris status` — agent ID, resources, data counts
+- `ferris init` — create data dir, config, DB, Ed25519 identity
+- `ferris serve --transport stdio` — MCP server
+- `ferris serve --transport http` — REST dev server
+- `ferris status` — agent ID, resources, Ollama models, data counts
 
-### HTTP API Endpoints
+### Node HTTP API
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Health check |
 | GET | `/api/v1/status` | Memory/object/task counts |
-| POST | `/api/v1/memory/remember` | Store key-value memory |
+| POST | `/api/v1/memory/remember` | Store key-value |
 | POST | `/api/v1/memory/recall` | Search memories |
 | DELETE | `/api/v1/memory/{key}` | Delete memory |
 | POST | `/api/v1/storage/store` | Store file (base64) |
@@ -185,7 +105,67 @@ All Phase 1 deliverables are complete and verified.
 | POST | `/api/v1/tasks` | Schedule task |
 | GET | `/api/v1/tasks` | List tasks |
 | DELETE | `/api/v1/tasks/{task_id}` | Cancel task |
+| POST | `/v1/chat/completions` | Inference via Ollama |
+| GET | `/v1/models` | List local models |
 
-### MCP Tools (stdio)
+### MCP Tools
 
 `whoami`, `remember`, `recall`, `forget`, `store`, `retrieve`, `list_files`, `schedule_task`, `list_tasks`, `cancel_task`
+
+## 8) Phase 2 Implementation Status — COMPLETE
+
+### New Crates
+
+| Crate | License | Status | Tests |
+|-------|---------|--------|-------|
+| `ferris-coordinator` | BUSL-1.1 | Done | 4 routing + 10 integration |
+| `ferris-credits` | MIT/Apache | Done | 7 unit tests |
+| `ferris-net` | MIT/Apache | Done | 1 signature test |
+| `ferris-inference` | MIT/Apache | Done | 3 unit tests |
+
+### New CLI Commands
+
+- `ferris join` — register with coordinator, auto-detect Ollama models
+- `ferris balance` — query credit balance
+
+### Coordinator Binary
+
+- `ferris-coordinator` — standalone Axum server on port 8421
+
+### Coordinator API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Health check |
+| POST | `/api/v1/register` | Agent registration |
+| POST | `/api/v1/heartbeat` | Heartbeat (signed) |
+| GET | `/api/v1/status` | Active agents, models |
+| GET | `/api/v1/wallet/balance` | Credit balance (signed) |
+| GET | `/api/v1/wallet/history` | Transaction history (signed) |
+| GET | `/api/v1/directory` | Active agent directory |
+| GET | `/dashboard/stats` | Network-wide metrics |
+| GET | `/v1/models` | All network models |
+| POST | `/v1/chat/completions` | Routed inference (signed) |
+
+### Features
+
+- Agent registry with registration, heartbeat, stale-agent sweep
+- Canonical routing algorithm with reputation/speed/latency/load scoring
+- Double-entry credit ledger (soft/hard balances)
+- Signup bonus (100 credits), availability rewards (10mc/min)
+- Inference settlement with 15% platform fee (atomic transactions)
+- Escrow hold/release/refund lifecycle
+- Ed25519 signature verification on protected endpoints
+- OpenAI-compatible inference routing (coordinator → node → Ollama)
+
+## 9) Quality Gates — ALL PASSING
+
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
+- [x] `cargo test --workspace` — 51 tests, all passing
+- [x] No `.unwrap()` calls in production handler code
+- [x] Atomic credit operations (SQLite transactions)
+- [x] Ed25519 signature verification on coordinator endpoints
+- [x] No unused dependencies
+- [x] No dead code or unused types
+- [x] Configurable via TOML + env overrides (all sections)
+- [x] E2E verified: node → coordinator → inference routing → settlement

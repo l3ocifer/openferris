@@ -20,7 +20,6 @@ license = "MIT OR Apache-2.0"
 authors = ["OpenFerris"]
 
 [workspace.dependencies]
-anyhow = "1"
 axum = "0.8"
 base64 = "0.22"
 blake3 = "1"
@@ -36,7 +35,6 @@ sysinfo = "0.33"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "time", "signal"] }
-tokio-stream = "0.1"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
