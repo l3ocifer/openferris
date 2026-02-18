@@ -77,7 +77,7 @@ jobs:
           copy target\${{ matrix.target }}\release\ferris-coordinator.exe dist\ferris-coordinator-${{ matrix.target }}.exe
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.target }}
           path: dist/
