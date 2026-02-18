@@ -8,6 +8,7 @@ use tracing_subscriber::EnvFilter;
 use ferris_coordinator::registry::AgentRegistry;
 use ferris_coordinator::router::InferenceRouter;
 use ferris_coordinator::routes::{run_coordinator, AppState};
+use ferris_coordinator::storage_router::StorageRouter;
 
 #[derive(Parser)]
 #[command(
@@ -54,7 +55,8 @@ async fn main() {
 
     let ledger = CreditLedger::new(pool.clone());
     let registry = AgentRegistry::new(pool.clone(), ledger);
-    let router = InferenceRouter::new(pool);
+    let router = InferenceRouter::new(pool.clone());
+    let storage_router = StorageRouter::new(pool);
 
     let registry_arc = Arc::new(registry);
 
@@ -85,6 +87,7 @@ async fn main() {
     let state = AppState {
         registry: registry_arc,
         router: Arc::new(router),
+        storage_router: Arc::new(storage_router),
     };
 
     if let Err(e) = run_coordinator(state, &cli.host, cli.port).await {

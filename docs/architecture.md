@@ -953,6 +953,9 @@ The coordinator binary. Axum HTTP server. BUSL-1.1 licensed.
 | `GET`  | `/credits/history` | Transaction history |
 | `POST` | `/infer` | Internal: node-facing inference dispatch |
 | `POST` | `/settle` | Internal: node reports token usage |
+| `POST` | `/api/v1/network/store` | Store file on network node (signed) |
+| `GET`  | `/api/v1/network/files` | List agent's network files (signed) |
+| `GET`  | `/api/v1/network/files/{id}` | Retrieve file from network (signed) |
 | `GET`  | `/health` | Coordinator health check |
 
 **Key crates:** `axum`, `tower`, `sqlx`, `tokio`
@@ -1269,7 +1272,7 @@ Explicit non-goals to prevent scope creep:
 
 | We Do NOT Build | Why Not | What We Do Instead |
 |-----------------|---------|-------------------|
-| **Distributed storage** | 6-12 month project. Replication, consistency, erasure coding — each is a PhD thesis. | Local FS + Cloudflare R2. R2 is $0.015/GB/month with free egress. Good enough through Phase 3. |
+| **Full distributed storage** | Replication, consistency, erasure coding — each is a PhD thesis. | Coordinator-proxied network storage is implemented (store/retrieve on other nodes, `network_objects` tracking, 1mc/KB settlement). Full replication and erasure coding deferred. |
 | **Distributed vector database** | Qdrant, Pinecone, Weaviate exist. We can't out-build them. | Local vectorlite per node. Memories are per-agent, not shared. Optional R2 backup. |
 | **Custom embedding service** | Latency-sensitive, needs GPU, complex to distribute. | ONNX Runtime locally. all-MiniLM-L6-v2 runs on CPU in <50ms. No network call. |
 | **Blockchain / on-chain settlement** | Regulatory minefield. Engineering complexity. Users don't care. | SQLite double-entry ledger on coordinator. Fast, simple, auditable. |

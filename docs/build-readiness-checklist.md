@@ -147,15 +147,22 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 | GET | `/dashboard/stats` | Network-wide metrics |
 | GET | `/v1/models` | All network models |
 | POST | `/v1/chat/completions` | Routed inference (signed) |
+| POST | `/api/v1/network/store` | Store file on network node (signed) |
+| GET | `/api/v1/network/files` | List agent's network files (signed) |
+| GET | `/api/v1/network/files/{id}` | Retrieve file from network (signed) |
 
 ### Features
 
 - Agent registry with registration, heartbeat, stale-agent sweep
 - Canonical routing algorithm with reputation/speed/latency/load scoring
+- Inference retry/fallback (top 3 candidates, reputation penalties)
+- Network storage routing (store/retrieve via coordinator proxy)
 - Double-entry credit ledger (soft/hard balances)
 - Signup bonus (100 credits), availability rewards (10mc/min)
 - Inference settlement with 15% platform fee (atomic transactions)
+- Storage settlement at 1mc/KB with 15% platform fee
 - Escrow hold/release/refund lifecycle
+- Rate limiting (ConcurrencyLimit 256, 10MB body limit)
 - Ed25519 signature verification on protected endpoints
 - OpenAI-compatible inference routing (coordinator → node → Ollama)
 
@@ -230,6 +237,15 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] SECURITY.md with 24hr acknowledgment SLA
 - [x] CHANGELOG.md following Keep a Changelog format
 - [x] `deny.toml` for license compliance auditing
+
+## 13) Distributed Network MVP — COMPLETE
+
+- [x] Inference routing with retry/fallback (top 3 candidates)
+- [x] Reputation penalties on failure (-1.0), boost on success (+0.1)
+- [x] Network storage routing (store/retrieve via coordinator proxy)
+- [x] Storage credit settlement (1mc/KB, 15% platform fee)
+- [x] Rate limiting (ConcurrencyLimit 256, 10MB body limit)
+- [x] `network_objects` table for distributed file tracking
 
 ## 12) Production Infrastructure — COMPLETE
 

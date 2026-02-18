@@ -113,6 +113,28 @@ curl -s -X POST http://127.0.0.1:8420/v1/chat/completions \
 curl -s http://127.0.0.1:8420/v1/models
 ```
 
+## 9) Network Storage APIs
+
+These endpoints require a running coordinator and at least one other registered node.
+
+```bash
+# Store a file on the network (coordinator routes to a storage node)
+curl -s -X POST https://api.openferris.com/api/v1/network/store \
+  -H "X-Agent-Id: $AGENT_ID" -H "X-Signature: $SIG" \
+  -H "content-type: application/json" \
+  -d '{"name":"report.pdf","data_base64":"..."}'
+
+# List your network files
+curl -s https://api.openferris.com/api/v1/network/files \
+  -H "X-Agent-Id: $AGENT_ID"
+
+# Retrieve a file from the network
+curl -s https://api.openferris.com/api/v1/network/files/$OBJECT_ID \
+  -H "X-Agent-Id: $AGENT_ID"
+```
+
+Storage is settled at 1mc/KB with a 15% platform fee. The coordinator tracks file locations in the `network_objects` table and proxies retrieval requests to the storing node.
+
 ## 8) Running tests
 
 ```bash
@@ -129,7 +151,7 @@ cargo test --workspace
 | Inference | Ollama proxy with OpenAI-compatible API |
 | Identity | Ed25519 keypair, deterministic agent ID |
 | Encryption | AES-256-GCM via HKDF-derived key from Ed25519 secret |
-| Network | Coordinator registration, heartbeat, credit economy |
+| Network | Coordinator registration, heartbeat, credit economy, inference routing, network storage |
 
 Canonical scope and next milestones are in:
 - `docs/PRD.md`

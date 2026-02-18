@@ -270,6 +270,113 @@ impl CreditLedger {
         })
     }
 
+    /// Settle a storage operation: debit owner, credit storage provider (minus platform fee).
+    ///
+    /// Pricing: 1 millicredit per KB stored.
+    pub async fn settle_storage(
+        &self,
+        owner_id: &str,
+        storage_provider_id: &str,
+        amount_mc: i64,
+        object_id: &str,
+        size_bytes: i64,
+    ) -> Result<Transaction> {
+        let now = unix_timestamp();
+        let tx_id = Uuid::now_v7().to_string();
+        let fee = platform_fee(amount_mc);
+        let provider_payout = amount_mc - fee;
+
+        let mut txn = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        let row = sqlx::query(
+            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
+        )
+        .bind(owner_id)
+        .fetch_optional(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?
+        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {owner_id}")))?;
+
+        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
+        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
+        let total_available = soft_balance + hard_balance;
+        if total_available < amount_mc {
+            return Err(FerrisError::InsufficientCredits(format!(
+                "need {amount_mc} mc, have {total_available} mc"
+            )));
+        }
+
+        let soft_debit = amount_mc.min(soft_balance);
+        let hard_debit = amount_mc - soft_debit;
+
+        sqlx::query(
+            "UPDATE credits SET soft_balance_mc = soft_balance_mc - ?,
+                                hard_balance_mc = hard_balance_mc - ?,
+                                total_spent_mc = total_spent_mc + ?
+             WHERE agent_id = ?",
+        )
+        .bind(soft_debit)
+        .bind(hard_debit)
+        .bind(amount_mc)
+        .bind(owner_id)
+        .execute(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        sqlx::query(
+            "UPDATE credits SET hard_balance_mc = hard_balance_mc + ?,
+                                total_earned_hard_mc = total_earned_hard_mc + ?
+             WHERE agent_id = ?",
+        )
+        .bind(provider_payout)
+        .bind(provider_payout)
+        .bind(storage_provider_id)
+        .execute(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        sqlx::query(
+            "INSERT INTO transactions
+             (tx_id, timestamp, from_agent, to_agent, tx_type, amount_mc, credit_type,
+              job_id, platform_fee_mc, status)
+             VALUES (?, ?, ?, ?, 'storage', ?, 'hard', ?, ?, 'completed')",
+        )
+        .bind(&tx_id)
+        .bind(now)
+        .bind(owner_id)
+        .bind(storage_provider_id)
+        .bind(amount_mc)
+        .bind(object_id)
+        .bind(fee)
+        .execute(&mut *txn)
+        .await
+        .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        txn.commit()
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        Ok(Transaction {
+            tx_id,
+            timestamp: now,
+            from_agent: Some(owner_id.into()),
+            to_agent: Some(storage_provider_id.into()),
+            tx_type: "storage".into(),
+            amount_mc,
+            credit_type: "hard".into(),
+            model_name: None,
+            tokens_in: None,
+            tokens_out: Some(size_bytes),
+            job_id: Some(object_id.into()),
+            platform_fee_mc: fee,
+            status: "completed".into(),
+        })
+    }
+
     /// Get recent transaction history for an agent.
     pub async fn get_history(&self, agent_id: &str, limit: usize) -> Result<Vec<Transaction>> {
         let rows = sqlx::query(

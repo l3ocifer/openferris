@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Network storage routing:** agents can store and retrieve files on other nodes via
+  coordinator. Files tracked in `network_objects` table, credits settled at 1mc/KB with
+  15% platform fee.
+- **Inference retry/fallback:** coordinator tries up to 3 providers on failure, with
+  reputation penalties (-1.0) for failing nodes.
+- **Rate limiting:** coordinator enforces 256 concurrent request limit and 10MB body
+  size limit.
+- **Storage credit settlement:** new `settle_storage()` in credit ledger with atomic
+  transactions.
 - `ferris start` one-command onboarding: auto-initializes, joins the network,
   contributes resources, starts HTTP server, and runs heartbeat — all in one command.
 - `contribute_percent` config (default 50%) with `ResourceManifest::contributed()`

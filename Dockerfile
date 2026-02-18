@@ -8,7 +8,7 @@ FROM rust:1.84-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+    pkg-config libssl-dev g++ cmake \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=planner /app/ .

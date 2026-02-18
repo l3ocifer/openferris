@@ -11,6 +11,7 @@ use ferris_common::{
 use ferris_coordinator::registry::AgentRegistry;
 use ferris_coordinator::router::InferenceRouter;
 use ferris_coordinator::routes::{build_coordinator_app, AppState};
+use ferris_coordinator::storage_router::StorageRouter;
 use ferris_credits::CreditLedger;
 use http_body_util::BodyExt;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -33,8 +34,9 @@ async fn setup() -> (axum::Router, SqlitePool) {
     let ledger = CreditLedger::new(pool.clone());
     let registry = Arc::new(AgentRegistry::new(pool.clone(), ledger));
     let router = Arc::new(InferenceRouter::new(pool.clone()));
+    let storage_router = Arc::new(StorageRouter::new(pool.clone()));
 
-    let state = AppState { registry, router };
+    let state = AppState { registry, router, storage_router };
     let app = build_coordinator_app(state);
     (app, pool)
 }
@@ -84,6 +86,14 @@ async fn run_schema(pool: &SqlitePool) {
             buyer_agent TEXT NOT NULL, seller_agent TEXT NOT NULL,
             amount_mc INTEGER NOT NULL, created_at INTEGER NOT NULL,
             expires_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'held'
+        )",
+        "CREATE TABLE IF NOT EXISTS network_objects (
+            object_id TEXT PRIMARY KEY,
+            owner_agent TEXT NOT NULL REFERENCES agents(agent_id),
+            storage_agent TEXT NOT NULL REFERENCES agents(agent_id),
+            name TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+            content_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active'
         )",
     ];
     for sql in ddl {

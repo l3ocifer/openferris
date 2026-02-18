@@ -4,6 +4,8 @@
 
 > OpenRouter aggregates cloud LLM providers behind one API. OpenFerris aggregates local compute — Ollama instances, idle GPUs, spare storage, CPU cycles — behind one API. We don't run any models. We just route. Same playbook, but for everything agents need, not just inference.
 
+**Status:** v0.1.0-alpha — Local agent fully functional. Network inference routing and distributed storage operational via coordinator. Credit economy active. Memory, compute, and agent messaging are local-only (network versions planned).
+
 **Website:** openferris.com
 **License:** MIT / Apache 2.0
 **Built in:** Rust
@@ -72,10 +74,10 @@ ferris start
 ```
 
 That's it. Your machine is now:
-1. An inference node (earning credits when agents need to think)
-2. A storage node (earning credits for spare disk)
-3. A compute node (earning credits for CPU time)
-4. A full agent with memory, storage, scheduling, and directory access
+1. **An inference node** — earning credits when other agents route inference to your Ollama (working now)
+2. **A storage node** — earning credits when other agents store files on your disk via the coordinator (working now)
+3. A compute node — earning credits for CPU time (planned)
+4. A full agent with memory, storage, scheduling, and directory access (working now, local-only)
 
 Adjust contribution level with `--contribute-percent`:
 ```bash
@@ -116,7 +118,7 @@ Machine B earns 0.08 credits. Agent A's balance debited 0.08 credits.
 Platform keeps 15% routing fee.
 ```
 
-Same pattern for storage, compute, and agent-to-agent requests. The coordinator is a router, not a provider.
+Inference routing is live with retry/fallback (top 3 candidates), reputation penalties on failure (-1.0), and reputation boost on success (+0.1). Network storage works the same way — Agent A stores a file via the coordinator, which routes it to Agent B's disk and settles credits at 1mc/KB with 15% platform fee. Distributed compute and agent-to-agent messaging are planned.
 
 ### The Credit Economy
 
@@ -251,9 +253,9 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
   │                                              │
   │  ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
   │  │ Registry │ │ Router   │ │ Credit Ledger│ │
-  │  │ (agents, │ │ (match   │ │ (earn/spend/ │ │
-  │  │  models, │ │  request │ │  balance)    │ │
-  │  │  caps)   │ │  to node)│ │              │ │
+  │  │ (agents, │ │ (infer + │ │ (earn/spend/ │ │
+  │  │  models, │ │  storage │ │  balance)    │ │
+  │  │  caps)   │ │  routing)│ │              │ │
   │  └──────────┘ └──────────┘ └──────────────┘ │
   └──────────────────┬───────────────────────────┘
                      │ HTTPS / QUIC
@@ -354,20 +356,26 @@ At 1,000 nodes (50% free, 40% Pro, 10% Team):
 
 **Milestone:** Agent A sends inference request → routed to Agent B's idle GPU → B earns credits. OpenFerris coordinator routes and settles credit transactions.
 
-### Phase 3: Tasks + Directory + Full Economy (Weeks 7-10)
-*"Agents finding and hiring each other. Phones embedding and verifying."*
+### Phase 3: Tasks + Directory + Storage + Full Economy (Weeks 7-10) — In Progress
+*"Agents finding and hiring each other. Distributed storage. Phones embedding and verifying."*
 
 - [x] Task scheduling: `schedule_task`, cron engine
 - [x] Agent directory: active agent listing
-- [ ] Agent-to-agent encrypted messaging
+- [x] Network storage routing: store/retrieve files on other nodes via coordinator proxy
+- [x] Storage credit settlement: 1mc/KB with 15% platform fee
+- [x] `network_objects` table for distributed file tracking
+- [x] Inference retry/fallback: top 3 candidates, reputation penalties (-1.0) on failure
+- [x] Rate limiting: ConcurrencyLimit (256) + 10MB body limit on coordinator
 - [x] Credit spending: hire agents, pay for services through directory
+- [ ] Agent-to-agent encrypted messaging
+- [ ] SSE streaming for inference
 - [ ] **S3-compatible storage endpoint** — unlocks rclone, backup tools, and every S3 client
 - [ ] **GitHub Actions self-hosted runner integration** — cheap CI/CD from the network
 - [ ] **Open WebUI / Jan / LobeChat provider config** — "OpenFerris Network" option in popular LLM UIs
 - [ ] **Android app Tier 2-3:** on-device embedding generation + inference verification
 - [ ] Team tier launches
 
-**Milestone:** Agent discovers another agent, hires it for a task, pays in credits. Phone network handles bulk embedding generation and verification. S3-compatible storage live. Full economic loop.
+**Milestone:** Agent discovers another agent, hires it for a task, pays in credits. Distributed storage operational via coordinator. Phone network handles bulk embedding generation and verification. S3-compatible storage live. Full economic loop.
 
 ### Phase 4: Financial Layer + Scale (Weeks 11-16)
 *"Credits become real money. Phones run inference."*
