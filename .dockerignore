@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+.gitignore
+.fastembed_cache/
+references/
+docs/
+*.md
+!README.md
+clippy.toml
+rustfmt.toml
+deny.toml

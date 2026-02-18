@@ -242,7 +242,7 @@ OpenFerris is open source. The community builds skills, integrations, tools, and
 
 ### Phase 2: Coordinator + Network (Weeks 3-6) — "The Network"
 
-**Build:** Coordinator on VPS (Axum + SQLite + Litestream backup), inference routing, credit economy v1 (soft credits), 2-3 anchor GPU nodes.
+**Build:** Coordinator on EC2 t3.medium (api.openferris.com) (Axum + SQLite + Litestream backup), inference routing, credit economy v1 (soft credits), 2-3 anchor GPU nodes.
 
 **Distribute (Flywheel 1 deepening):** LiteLLM provider PR, LangChain/CrewAI integrations, Claude Desktop Extensions, OpenRouter application, Product Hunt, VS Code extension.
 
@@ -315,7 +315,7 @@ Power users unlock premium modes: larger models, more storage, non-charging hour
 
 | Cost | Amount | Phase |
 |------|--------|-------|
-| Coordinator VPS | $20-50/month → $100-200/month | 2 → 4+ |
+| Coordinator EC2 (t3.medium) | $32/month → scales to ASG + RDS | 2 → 4+ |
 | Anchor GPU nodes | $100-200/month | 2-3 |
 | Domain + services | $50/month | 1+ |
 | LLC maintenance | $100/year | 0+ |

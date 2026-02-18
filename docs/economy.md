@@ -391,7 +391,7 @@ Partner with hosting providers. Referral fee or revenue share (10-20% of hosting
 
 | Cost | Amount | Phase |
 |------|--------|-------|
-| Coordinator VPS | $20-50/month → $100-200/month | 2 → 4+ |
+| Coordinator EC2 (t3.medium) | $32/month → scales to ASG + RDS | 2 → 4+ |
 | Anchor GPU nodes (Vast.ai) | $100-200/month | 2-3 |
 | Domain + services | $50/month | 1+ |
 | LLC maintenance | $100/year | 0+ |

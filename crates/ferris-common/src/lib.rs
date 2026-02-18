@@ -105,7 +105,7 @@ fn default_contribute_percent() -> u32 {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
-            coordinator_url: "https://api.openferris.dev".into(),
+            coordinator_url: "https://api.openferris.com".into(),
             heartbeat_interval_secs: 30,
             contribute_gpu: true,
             contribute_storage: true,

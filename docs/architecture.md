@@ -60,7 +60,7 @@
              ▼                  ▼                   ▼
     ┌─────────────────────────────────────────────────────────┐
     │              FERRIS-COORDINATOR  (BUSL)                  │
-    │              Single VPS · Axum · SQLite                  │
+    │              EC2 t3.medium · Axum · SQLite                  │
     │                                                          │
     │  ┌────────────┐ ┌────────────┐ ┌────────────────────┐   │
     │  │ Inference   │ │ Credit     │ │ Agent Directory    │   │
@@ -124,7 +124,7 @@ OpenFerris ships as two distinct binaries with separate licenses:
 │  ferris                          ferris-coordinator          │
 │  ──────                          ──────────────────          │
 │  License: MIT / Apache-2.0       License: BUSL-1.1           │
-│  Target:  contributor nodes      Target:  single VPS          │
+│  Target:  contributor nodes      Target:  EC2 t3.medium          │
 │  Size:    <20MB static binary    Size:    <15MB static binary │
 │  Install: curl | sh              Install: Docker or binary    │
 │                                                              │
@@ -1276,7 +1276,7 @@ Explicit non-goals to prevent scope creep:
 | **TEE / SGX enclaves** | Requires specific hardware. Complex attestation. Marginal security gain for our trust model. | TOS + reputation + Ollama sandboxing. Transparent about the tradeoffs. |
 | **Full S3 API** | Massive surface area. 100+ operations. | Content-addressed object store with `put`/`get`/`list`/`delete`. R2 for S3 compat. |
 | **Custom inference engine** | Ollama and vLLM are excellent. Years of optimization. | Proxy to Ollama/vLLM. Add metering and routing on top. |
-| **Multi-region coordinator** | Premature. Single VPS handles thousands of nodes. | Single coordinator with SQLite. Shard when we need to (10k+ nodes). |
+| **Multi-region coordinator** | Premature. Single EC2 t3.medium handles thousands of nodes. | Single coordinator with SQLite. Shard when we need to (10k+ nodes). |
 | **Real-time memory sync across nodes** | Distributed consensus is hard. CAP theorem. | Memories are local to each agent. That's a feature, not a bug. Agents own their memories. |
 | **Custom container runtime** | Docker/OCI exists. Not our problem. | Ollama handles model isolation. `ferris` is a userspace binary. |
 | **Payment processing (Phase 1-3)** | Premature optimization. Credits are internal. | Internal credit system. Fiat on/off ramp in Phase 4 only. |

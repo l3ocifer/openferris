@@ -247,7 +247,7 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
                 TWO BINARIES
   ┌──────────────────────────────────────────────┐
   │       ferris-coordinator (BUSL-1.1)          │
-  │       (Axum service, single $20 VPS)         │
+  │       (Axum service, EC2 t3.medium)           │
   │                                              │
   │  ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
   │  │ Registry │ │ Router   │ │ Credit Ledger│ │
@@ -277,7 +277,7 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
 
 **Licensing:** `ferris` node binary is MIT. `ferris-coordinator` is BUSL-1.1 (source-available, self-hostable). Protocol spec is open.
 
-Infrastructure costs stay under $100/month until 10,000+ nodes.
+Infrastructure costs stay under $100/month until 10,000+ nodes. The coordinator runs on EC2 t3.medium at api.openferris.com.
 
 ### Security
 

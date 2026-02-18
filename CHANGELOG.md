@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Task execution engine:** background Tokio loop (60s poll) evaluates cron
   expressions via `croner` v3. Actions: `log`, `http`, `webhook`. Run history
   tracked in `task_runs` table.
+- **Production coordinator infrastructure:** EC2 t3.medium at api.openferris.com
+  with SSM access, hardened security group, encrypted EBS, termination protection,
+  and automatic updates.
+
+### Changed
+- Coordinator URL updated from `api.openferris.dev` to `api.openferris.com`.
 
 ## [0.1.0] - 2026-02-17
 

@@ -230,3 +230,27 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] SECURITY.md with 24hr acknowledgment SLA
 - [x] CHANGELOG.md following Keep a Changelog format
 - [x] `deny.toml` for license compliance auditing
+
+## 12) Production Infrastructure — COMPLETE
+
+### Coordinator Hosting
+- [x] EC2 t3.medium (2 vCPU, 4GB RAM, 20GB gp3 encrypted EBS) in us-east-1
+- [x] Elastic IP: 54.196.139.79
+- [x] DNS: `api.openferris.com` → A record in Route53 (PIE account)
+- [x] Domain: `openferris.com` registered via Amazon Registrar (auto-renew, WHOIS privacy)
+
+### Security Hardening
+- [x] AWS SSM access (no SSH port exposed)
+- [x] Security group: ports 80, 443, 8421 only (no port 22)
+- [x] Password authentication disabled in sshd
+- [x] Root login disabled
+- [x] Termination protection enabled
+- [x] EBS encrypted at rest
+- [x] Automatic security updates via dnf-automatic
+- [x] Detailed CloudWatch monitoring enabled
+
+### Scaling Path
+- Phase 1 (→10K agents): Single EC2 + SQLite (~$32/mo)
+- Phase 2 (10K→100K): ALB + EC2 + RDS PostgreSQL (~$60-100/mo)
+- Phase 3 (100K→1M): ALB + Auto Scaling Group + RDS (~$200-500/mo)
+- Phase 4 (1M+): ECS Fargate + Aurora Serverless (scales with demand)
