@@ -217,6 +217,7 @@ async fn cmd_start(
     let endpoint_url = format!("http://{host}:{port}");
     let agent_id = identity.agent_id.clone();
     let public_key = identity.public_key_bytes().to_vec();
+    let cipher = ferris_crypto::Cipher::from_secret_key_bytes(&identity.signing_key.to_bytes());
 
     let client = ferris_net::CoordinatorClient::new(
         &coordinator_url,
@@ -316,12 +317,13 @@ async fn cmd_start(
     println!("HTTP server:  http://{host}:{port}");
     println!("MCP server:   use `ferris serve` for stdio transport");
     println!("Heartbeat:    every {}s", config.network.heartbeat_interval_secs);
+    println!("Encryption:   AES-256-GCM (at rest)");
     println!();
     println!("Ready. Earning credits from contributed resources.");
     println!("Press Ctrl+C to stop.");
     println!();
 
-    ferris_core::server::run_server(&config, pool, &agent_id, host, port).await
+    ferris_core::server::run_server(&config, pool, &agent_id, host, port, Some(cipher)).await
 }
 
 async fn heartbeat_loop(
@@ -438,7 +440,17 @@ async fn cmd_serve(
         }
         "http" => {
             tracing::info!(agent_id = %identity.agent_id, "starting HTTP server");
-            ferris_core::server::run_server(&config, pool, &identity.agent_id, host, port).await
+            let cipher =
+                ferris_crypto::Cipher::from_secret_key_bytes(&identity.signing_key.to_bytes());
+            ferris_core::server::run_server(
+                &config,
+                pool,
+                &identity.agent_id,
+                host,
+                port,
+                Some(cipher),
+            )
+            .await
         }
         other => Err(ferris_common::FerrisError::Config(format!(
             "unknown transport: {other} (expected 'stdio' or 'http')"

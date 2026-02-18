@@ -33,5 +33,9 @@ bootstrap.sh
 # Reference material (not part of the project)
 references/
 
+# ML model cache (auto-downloaded by fastembed)
+.fastembed_cache/
+**/.fastembed_cache/
+
 # Distribution
 dist/

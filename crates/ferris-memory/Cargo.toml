@@ -7,10 +7,19 @@ authors.workspace = true
 
 [dependencies]
 ferris-common = { path = "../ferris-common" }
+base64 = { workspace = true, optional = true }
+ferris-crypto = { path = "../ferris-crypto", optional = true }
+fastembed = { version = "5", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+tracing.workspace = true
 uuid.workspace = true
+
+[features]
+default = ["semantic"]
+semantic = ["dep:fastembed"]
+encryption = ["dep:ferris-crypto", "dep:base64"]
 
 [dev-dependencies]
 tempfile.workspace = true

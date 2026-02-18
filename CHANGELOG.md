@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ferris start` one-command onboarding: auto-initializes, joins the network,
   contributes resources, starts HTTP server, and runs heartbeat — all in one command.
 - `contribute_percent` config (default 50%) with `ResourceManifest::contributed()`
-  for proportional resource sharing, capped at 100 GB storage.
+  for proportional resource sharing.
 - Graceful offline mode: if coordinator is unreachable, node runs local-only
   and retries registration every 60 seconds in the background.
 - Cross-platform release workflow (macOS x86_64 + aarch64, Linux x86_64 + aarch64,
@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cargo-deny` license and advisory auditing in CI.
 - Dependabot for automated dependency updates.
 - `CHANGELOG.md` (this file).
+- **Semantic memory search:** hybrid text + vector recall using `fastembed`
+  (AllMiniLM-L6-V2, 384-dim embeddings). Cosine similarity computed in Rust.
+  Graceful fallback to LIKE search if embedding model unavailable.
+- **Encryption at rest:** `ferris-crypto` crate with AES-256-GCM. Keys derived
+  from Ed25519 identity via HKDF-SHA256. Applied to memory values and stored files.
+- **Task execution engine:** background Tokio loop (60s poll) evaluates cron
+  expressions via `croner` v3. Actions: `log`, `http`, `webhook`. Run history
+  tracked in `task_runs` table.
 
 ## [0.1.0] - 2026-02-17
 

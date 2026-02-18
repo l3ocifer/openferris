@@ -53,7 +53,8 @@ async fn run_schema(pool: &SqlitePool) {
             value TEXT NOT NULL,
             metadata TEXT,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            embedding BLOB
         )",
         "CREATE TABLE IF NOT EXISTS objects (
             id TEXT PRIMARY KEY,
@@ -70,7 +71,16 @@ async fn run_schema(pool: &SqlitePool) {
             schedule TEXT NOT NULL,
             action TEXT NOT NULL,
             enabled INTEGER NOT NULL DEFAULT 1,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            last_run_at INTEGER
+        )",
+        "CREATE TABLE IF NOT EXISTS task_runs (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            started_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            result TEXT,
+            FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
         )",
     ];
     for sql in ddl {
@@ -225,7 +235,7 @@ async fn tasks_round_trip() {
     let req = json_request(
         Method::POST,
         "/api/v1/tasks",
-        serde_json::json!({"schedule": "0 * * * *", "action": "ping"}),
+        serde_json::json!({"schedule": "0 * * * *", "action": "{\"type\":\"log\",\"message\":\"ping\"}"}),
     );
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

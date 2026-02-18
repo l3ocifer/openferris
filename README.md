@@ -67,6 +67,7 @@ ferris start
 #   signup bonus: 100.0 credits
 # HTTP server:  http://127.0.0.1:8420
 # Heartbeat:    every 30s
+# Encryption:   AES-256-GCM (at rest)
 # Ready. Earning credits from contributed resources.
 ```
 
@@ -229,12 +230,13 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
 | Core library | `libferris` | Library-first. CLI, Docker, mobile, WASM are thin wrappers. |
 | HTTP/API | Axum | Async, fast, Rust-native |
 | MCP Server | rmcp | Official Rust MCP SDK |
-| Local DB | SQLite + vectorlite | Zero-config, embedded, vector search for semantic memory |
+| Local DB | SQLite | Zero-config, embedded, semantic vector search via fastembed |
 | Identity | ed25519-dalek | Ed25519 keypairs. One `ferris init`, no accounts. |
+| Encryption | AES-256-GCM (aes-gcm + hkdf) | Data encrypted at rest, key derived from Ed25519 identity |
 | Content Addressing | blake3 | Fast hashing for content-addressed storage and dedup |
 | Object Storage | Local FS + Cloudflare R2 | Local-first; R2 backs network storage (Phase 1-3) |
-| Embeddings | ONNX Runtime (all-MiniLM-L6-v2) | Fast local embeddings, no API calls needed |
-| Task Engine | Tokio | Async cron scheduler, background workers |
+| Embeddings | fastembed (AllMiniLM-L6-V2) | Local 384-dim embeddings via ONNX, no API calls |
+| Task Engine | Tokio + croner | Async cron scheduler with background execution loop |
 | Inference Bridge | Ollama/vLLM auto-detection | Detect local inference, register as network provider |
 | Networking | libp2p or QUIC | P2P communication, NAT traversal |
 | Crypto (Phase 4) | Alloy + Base L2 | USDC wallets for optional cashout |
@@ -281,7 +283,7 @@ Infrastructure costs stay under $100/month until 10,000+ nodes.
 
 - Ed25519 identity from `ferris init` — no passwords, no accounts
 - Content-addressed storage via blake3
-- Data encrypted at rest (AES-256-GCM), keys never leave owning agent
+- **Data encrypted at rest:** AES-256-GCM via `ferris-crypto` crate. Encryption key derived from Ed25519 signing key using HKDF-SHA256. Applied to memory values and stored file contents.
 - Agent-to-agent messages encrypted in transit
 - Inference verification: proof-of-inference via sampling (known prompts, verified outputs)
 - Challenge-response for storage verification

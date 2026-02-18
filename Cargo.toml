@@ -10,6 +10,7 @@ members = [
     "crates/ferris-net",
     "crates/ferris-inference",
     "crates/ferris-coordinator",
+    "crates/ferris-crypto",
 ]
 resolver = "2"
 

@@ -10,6 +10,7 @@ use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use ferris_common::FerrisConfig;
+use ferris_crypto::Cipher;
 use ferris_inference::{ChatCompletionRequest, OllamaProxy};
 use ferris_memory::MemoryStore;
 use ferris_storage::ObjectStore;
@@ -109,12 +110,22 @@ pub async fn run_server(
     agent_id: &str,
     host: &str,
     port: u16,
+    cipher: Option<Cipher>,
 ) -> ferris_common::Result<()> {
     let objects_dir = PathBuf::from(&config.agent.data_dir).join("objects");
 
-    let memory = Arc::new(MemoryStore::new(pool.clone(), config.memory.max_entries));
-    let storage = Arc::new(ObjectStore::new(pool.clone(), objects_dir, config.storage.max_mb));
-    let tasks = Arc::new(TaskScheduler::new(pool, config.tasks.max_scheduled));
+    let mut memory = MemoryStore::new(pool.clone(), config.memory.max_entries);
+    let mut storage = ObjectStore::new(pool.clone(), objects_dir, config.storage.max_mb);
+    if let Some(c) = cipher {
+        memory = memory.with_cipher(c.clone());
+        storage = storage.with_cipher(c);
+    }
+    let memory = Arc::new(memory);
+    let storage = Arc::new(storage);
+    let tasks = Arc::new(TaskScheduler::new(pool.clone(), config.tasks.max_scheduled));
+
+    // Start the background task executor
+    let _task_executor = TaskScheduler::start_executor(pool, 60);
     let inference = Arc::new(OllamaProxy::new(
         &config.inference.ollama_url,
         config.inference.max_concurrent_requests,

@@ -37,6 +37,9 @@ pub enum FerrisError {
 
     #[error("inference error: {0}")]
     Inference(String),
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 pub type Result<T> = std::result::Result<T, FerrisError>;

@@ -12,11 +12,12 @@ clap.workspace = true
 dirs.workspace = true
 ed25519-dalek.workspace = true
 ferris-common = { path = "../ferris-common" }
+ferris-crypto = { path = "../ferris-crypto" }
 ferris-inference = { path = "../ferris-inference" }
 ferris-mcp = { path = "../ferris-mcp" }
-ferris-memory = { path = "../ferris-memory" }
+ferris-memory = { path = "../ferris-memory", features = ["encryption"] }
 ferris-net = { path = "../ferris-net" }
-ferris-storage = { path = "../ferris-storage" }
+ferris-storage = { path = "../ferris-storage", features = ["encryption"] }
 ferris-tasks = { path = "../ferris-tasks" }
 rand.workspace = true
 serde.workspace = true

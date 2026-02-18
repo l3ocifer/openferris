@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+#[cfg(feature = "encryption")]
+use ferris_crypto::Cipher;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
     pub file_id: String,
@@ -18,6 +21,8 @@ pub struct ObjectStore {
     pool: SqlitePool,
     objects_dir: PathBuf,
     max_mb: u64,
+    #[cfg(feature = "encryption")]
+    cipher: Option<Cipher>,
 }
 
 impl ObjectStore {
@@ -26,7 +31,15 @@ impl ObjectStore {
             pool,
             objects_dir,
             max_mb,
+            #[cfg(feature = "encryption")]
+            cipher: None,
         }
+    }
+
+    #[cfg(feature = "encryption")]
+    pub fn with_cipher(mut self, cipher: Cipher) -> Self {
+        self.cipher = Some(cipher);
+        self
     }
 
     /// Access the underlying connection pool (for status queries).
@@ -35,6 +48,7 @@ impl ObjectStore {
     }
 
     /// Store a file with content-addressed deduplication (blake3).
+    /// When encryption is enabled, file contents are encrypted before writing to disk.
     pub async fn store(&self, name: &str, data: &[u8]) -> Result<FileInfo> {
         let used: i64 =
             sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM objects")
@@ -50,13 +64,23 @@ impl ObjectStore {
             )));
         }
 
+        // Hash plaintext for content-addressed deduplication
         let hash_hex = blake3::hash(data).to_hex().to_string();
+
+        // Encrypt data before writing to disk
+        #[cfg(feature = "encryption")]
+        let disk_data: Vec<u8> = match &self.cipher {
+            Some(c) => c.encrypt(data),
+            None => data.to_vec(),
+        };
+        #[cfg(not(feature = "encryption"))]
+        let disk_data: &[u8] = data;
 
         let subdir = &hash_hex[..2];
         let file_path = self.objects_dir.join(subdir).join(&hash_hex);
         if !file_path.exists() {
             tokio::fs::create_dir_all(file_path.parent().unwrap()).await?;
-            tokio::fs::write(&file_path, data).await?;
+            tokio::fs::write(&file_path, &disk_data).await?;
         }
 
         let id = Uuid::now_v7().to_string();
@@ -86,6 +110,7 @@ impl ObjectStore {
     }
 
     /// Retrieve a file by id — returns metadata + raw bytes.
+    /// When encryption is enabled, file contents are decrypted after reading from disk.
     pub async fn retrieve(&self, file_id: &str) -> Result<(FileInfo, Vec<u8>)> {
         let row = sqlx::query(
             "SELECT id, name, size_bytes, local_path, content_hash, created_at
@@ -98,7 +123,16 @@ impl ObjectStore {
         .ok_or_else(|| FerrisError::NotFound(format!("object: {file_id}")))?;
 
         let local_path: String = row.get("local_path");
-        let data = tokio::fs::read(&local_path).await?;
+        let raw = tokio::fs::read(&local_path).await?;
+
+        // Decrypt if cipher is available
+        #[cfg(feature = "encryption")]
+        let data = match &self.cipher {
+            Some(c) => c.decrypt(&raw).map_err(|e| FerrisError::Storage(e.to_string()))?,
+            None => raw,
+        };
+        #[cfg(not(feature = "encryption"))]
+        let data = raw;
 
         Ok((row_to_info(&row), data))
     }

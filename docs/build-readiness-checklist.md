@@ -78,9 +78,10 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 |-------|--------|-------|
 | `ferris-common` | Done | shared types, errors, config, protocol types |
 | `ferris-core` | Done | CLI, config, identity, resources, HTTP server |
-| `ferris-memory` | Done | 8 unit tests |
-| `ferris-storage` | Done | 6 unit tests |
-| `ferris-tasks` | Done | 5 unit tests |
+| `ferris-crypto` | Done | AES-256-GCM encryption, HKDF key derivation, 6 unit tests |
+| `ferris-memory` | Done | 11 unit tests (semantic search, cosine similarity, encryption) |
+| `ferris-storage` | Done | 6 unit tests (encryption at rest) |
+| `ferris-tasks` | Done | 10 unit tests (cron validation, task execution, run history) |
 | `ferris-mcp` | Done | 10 MCP tools via rmcp 0.16 |
 
 ### CLI Commands
@@ -165,7 +166,7 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] Auto-initializes node (data dir, config, DB, identity) if not already done.
 - [x] Detects system resources (CPU, RAM, GPU, storage) and Ollama models.
 - [x] `contribute_percent` config (default 50%) — reports only the contributed portion
-  of resources to the coordinator. Storage capped at 100 GB.
+  of resources to the coordinator.
 - [x] Attempts coordinator registration; on failure, runs local-only with 60s background retry.
 - [x] Starts HTTP server and heartbeat loop in parallel.
 - [x] CLI flag: `--contribute-percent`, env var: `FERRIS_CONTRIBUTE_PERCENT`.
@@ -185,10 +186,39 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] Dependabot for Cargo + GitHub Actions dependency updates.
 - [x] `Cargo.lock` committed (binary workspace).
 
-## 10) Quality Gates — ALL PASSING
+## 10) Feature Implementation Status
 
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
-- [x] `cargo test --workspace` — 51 tests, all passing
+### Semantic Memory Search — COMPLETE
+
+- [x] `fastembed` (AllMiniLM-L6-V2, 384-dim) for embedding generation
+- [x] Embeddings stored as BLOB in SQLite `memories.embedding` column
+- [x] Cosine similarity computed in Rust (no external extensions needed)
+- [x] Hybrid search: vector similarity + text LIKE, combined scoring
+- [x] Graceful fallback to text search if embedder unavailable
+- [x] Migration: `0002_vector_search.sql`
+
+### Encryption at Rest — COMPLETE
+
+- [x] `ferris-crypto` crate: AES-256-GCM encrypt/decrypt
+- [x] Key derivation: HKDF-SHA256 from Ed25519 secret key
+- [x] Memory values encrypted before storage, decrypted on read
+- [x] File contents encrypted before writing to disk
+- [x] Embeddings generated from plaintext BEFORE encryption
+- [x] Feature-gated: `encryption` feature on `ferris-memory` and `ferris-storage`
+
+### Task Execution Engine — COMPLETE
+
+- [x] `croner` v3 for cron expression parsing and validation
+- [x] Background Tokio task polls every 60s for due tasks
+- [x] Task actions: `log`, `http`, `webhook`
+- [x] Run history recorded in `task_runs` table
+- [x] `last_run_at` tracking prevents duplicate execution
+- [x] Migration: `0003_task_execution.sql`
+
+## 11) Quality Gates — ALL PASSING
+
+- [x] `cargo clippy --workspace --all-targets` — zero warnings
+- [x] `cargo test --workspace` — 66 tests, all passing
 - [x] No `.unwrap()` calls in production handler code
 - [x] Atomic credit operations (SQLite transactions)
 - [x] Ed25519 signature verification on coordinator endpoints
