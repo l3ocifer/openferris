@@ -9,6 +9,8 @@
 **Built in:** Rust
 **Tagline:** *Save Ferris.* 🦀
 
+> **⚠️ OpenFerris has NO cryptocurrency token.** There is no $FERRIS, $CRAB, or any token associated with this project. Anyone selling an OpenFerris token is running a scam. [Report scams.](SECURITY.md)
+
 ---
 
 ## The Idea in 30 Seconds
@@ -208,6 +210,7 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
 > Agent distribution plan (Full 11-door map): [`docs/agent-distribution.md`](docs/agent-distribution.md)
 > Mobile supply strategy (phone as node): [`docs/mobile-supply.md`](docs/mobile-supply.md)
 > Two-flywheel growth strategy: [`docs/two-flywheel-strategy.md`](docs/two-flywheel-strategy.md)
+> Token & crypto defense strategy: [`docs/token-strategy.md`](docs/token-strategy.md)
 
 ### Design Principles
 

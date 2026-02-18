@@ -170,7 +170,7 @@ impl ResourceManifest {
         Self {
             cpu_cores: ((self.cpu_cores as u64 * pct) / 100).max(1) as u16,
             ram_mb: (self.ram_mb * pct) / 100,
-            storage_avail_mb: ((self.storage_avail_mb * pct) / 100).min(102_400), // cap 100GB
+            storage_avail_mb: (self.storage_avail_mb * pct) / 100,
             gpu: self.gpu.clone(),
         }
     }
