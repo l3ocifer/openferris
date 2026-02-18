@@ -18,16 +18,27 @@ Include:
 
 ## Response Targets
 
-1. Initial acknowledgment: within 72 hours.
-2. Triage decision: within 7 days.
-3. Coordinated fix and disclosure timeline: case-by-case based on severity.
+1. Initial acknowledgment: within **24 hours**.
+2. Triage and severity assessment: within **72 hours**.
+3. Patch timeline (by severity):
+   - Critical: same-day patch.
+   - High: within 48 hours.
+   - Medium: within 1 week.
+   - Low: next scheduled release.
+4. Coordinated disclosure: case-by-case based on severity.
+
+## Credit
+
+We credit all reporters in the advisory and release notes (unless
+anonymity is requested).
 
 ## Scope
 
 In scope:
-- `ferris` and workspace crates.
+- `ferris` and all workspace crates.
+- `ferris-coordinator` and its API.
 - CI workflows and release pipeline.
-- Coordinator API and ledger logic (when present).
+- Install scripts and published binaries.
 
 Out of scope:
 - Third-party services and integrations not controlled by this repository.

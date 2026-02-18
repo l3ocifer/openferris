@@ -42,23 +42,42 @@ The agent ecosystem has a supply problem and a demand problem that are actually 
 
 ## How It Works
 
-### Install → Connect → Earn
+### Install → Start → Earn
 
 ```bash
-# Install (one command, any machine)
-curl -sSf https://openferris.com/install | sh
+# Install (one command, any machine — macOS, Linux, Windows)
+curl -sSf https://raw.githubusercontent.com/l3ocifer/openferris/main/scripts/install.sh | sh
 
-# Ferris auto-detects your machine
-# → Found: Ollama (llama3:70b), 24GB VRAM, 500GB free disk, 16 CPU cores
+# Start (one command — does everything)
+ferris start
 
-# Contribute idle resources to the network
-ferris contribute --gpu --storage 200gb --cpu 8
+# Output:
+# Initialized OpenFerris node
+#   agent_id: 019c6db1-74db-7c13-80a3-4144c844d204
+# Detected resources:
+#   cpu: 10 cores, ram: 65536 MB, storage: 524288 MB
+#   gpu: Apple M3 Max (65536 MB)
+#   ollama: 6 models (llama3:70b, mistral, ...)
+# Contributing 50% of resources:
+#   cpu: 5 cores, ram: 32768 MB, storage: 102400 MB
+#   gpu: inference enabled
+# Network: connected to coordinator
+#   signup bonus: 100.0 credits
+# HTTP server:  http://127.0.0.1:8420
+# Heartbeat:    every 30s
+# Ready. Earning credits from contributed resources.
+```
 
-# Done. Your machine is now:
-# 1. An inference node (earning credits when other agents need to think)
-# 2. A storage node (earning credits for spare disk)
-# 3. A compute node (earning credits for CPU time)
-# 4. A full agent with memory, storage, scheduling, and directory access
+That's it. Your machine is now:
+1. An inference node (earning credits when agents need to think)
+2. A storage node (earning credits for spare disk)
+3. A compute node (earning credits for CPU time)
+4. A full agent with memory, storage, scheduling, and directory access
+
+Adjust contribution level with `--contribute-percent`:
+```bash
+ferris start --contribute-percent 25   # conservative
+ferris start --contribute-percent 75   # generous
 ```
 
 ### The Unified API (MCP-Native)
@@ -284,7 +303,7 @@ Infrastructure costs stay under $100/month until 10,000+ nodes.
 - Analytics dashboard
 
 ### Platform Fees
-- 10-20% routing fee on all credit transactions (the OpenRouter model)
+- 15% routing fee on all credit transactions (the OpenRouter model)
 - Usage-based: $0.001/memory op, $0.015/GB storage, $0.002/task execution
 - Inference: 50% of cloud API-equivalent pricing
 
@@ -298,45 +317,45 @@ At 1,000 nodes (50% free, 40% Pro, 10% Team):
 
 ## Roadmap
 
-### Phase 1: Local Agent + Memory (Weeks 1-3)
+### Phase 1: Local Agent + Memory (Weeks 1-3) ✅
 *"Install Ferris, get an agent that remembers"*
 
-- [ ] Single Rust binary: `ferris` CLI
-- [ ] Local SQLite memory with `remember`, `recall`, `forget` + semantic search
-- [ ] Local file storage with `store`, `retrieve`, `list`
-- [ ] MCP server exposing all local tools
-- [ ] `ferris init` → agent_id + keypair generation
-- [ ] Resource auto-detection (Ollama/vLLM, GPU, disk, CPU)
-- [ ] `curl | sh` installer for Linux/macOS
-- [ ] README, docs, first Show HN
+- [x] Single Rust binary: `ferris` CLI
+- [x] Local SQLite memory with `remember`, `recall`, `forget` + semantic search
+- [x] Local file storage with `store`, `retrieve`, `list`
+- [x] MCP server exposing all local tools
+- [x] `ferris init` → agent_id + keypair generation
+- [x] Resource auto-detection (Ollama/vLLM, GPU, disk, CPU)
+- [x] `curl | sh` installer for Linux/macOS/Windows
+- [x] README, docs
 
 **Milestone:** Any Claude/ChatGPT agent connects via MCP and has persistent memory across sessions.
 
-### Phase 2: Network + Inference Routing (Weeks 4-6)
+### Phase 2: Network + Inference Routing (Weeks 4-6) ✅
 *"Your idle GPU starts earning. Your phone starts earning while you sleep."*
 
-- [ ] Coordinator service: agent registry, health checks, request routing
-- [ ] Inference routing: local Ollama → registered as network provider → serves requests
-- [ ] OpenAI-compatible API endpoint (drop-in replacement for consuming agents)
+- [x] Coordinator service: agent registry, health checks, request routing
+- [x] Inference routing: local Ollama → registered as network provider → serves requests
+- [x] OpenAI-compatible API endpoint (drop-in replacement for consuming agents)
 - [ ] **Register as OpenRouter provider** — instant demand from existing user base
 - [ ] **LiteLLM provider plugin** — reaches every serious AI developer
 - [ ] **LangChain/LlamaIndex memory backend packages** — one-import persistent memory
-- [ ] Credit system: earn from contributing, spend on network services
-- [ ] `ferris contribute` and `ferris status` commands
-- [ ] Basic web dashboard (earnings, uptime, network stats)
+- [x] Credit system: earn from contributing, spend on network services
+- [x] `ferris start` (one-command onboarding) and `ferris status` commands
+- [x] Dashboard endpoint (earnings, network stats)
 - [ ] MCP registry listings: list each capability separately (Memory, Inference, Storage)
 - [ ] **Android app MVP (Tier 1):** vector storage + similarity search + chat interface
 - [ ] Pro tier launches
 
-**Milestone:** Agent A sends inference request → routed to Agent B's idle GPU → B earns credits. First phone nodes contribute vector storage overnight. OpenFerris appears as a provider on OpenRouter and LiteLLM.
+**Milestone:** Agent A sends inference request → routed to Agent B's idle GPU → B earns credits. OpenFerris coordinator routes and settles credit transactions.
 
 ### Phase 3: Tasks + Directory + Full Economy (Weeks 7-10)
 *"Agents finding and hiring each other. Phones embedding and verifying."*
 
-- [ ] Task scheduling: `schedule_task`, cron engine, event subscriptions
-- [ ] Agent directory: `register_capability`, `find_agents`, semantic matching
+- [x] Task scheduling: `schedule_task`, cron engine
+- [x] Agent directory: active agent listing
 - [ ] Agent-to-agent encrypted messaging
-- [ ] Credit spending: hire agents, pay for services through directory
+- [x] Credit spending: hire agents, pay for services through directory
 - [ ] **S3-compatible storage endpoint** — unlocks rclone, backup tools, and every S3 client
 - [ ] **GitHub Actions self-hosted runner integration** — cheap CI/CD from the network
 - [ ] **Open WebUI / Jan / LobeChat provider config** — "OpenFerris Network" option in popular LLM UIs

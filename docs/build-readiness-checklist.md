@@ -158,7 +158,34 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - Ed25519 signature verification on protected endpoints
 - OpenAI-compatible inference routing (coordinator → node → Ollama)
 
-## 9) Quality Gates — ALL PASSING
+## 9) One-Command Onboarding — COMPLETE
+
+### `ferris start` (combines init + join + serve + heartbeat)
+
+- [x] Auto-initializes node (data dir, config, DB, identity) if not already done.
+- [x] Detects system resources (CPU, RAM, GPU, storage) and Ollama models.
+- [x] `contribute_percent` config (default 50%) — reports only the contributed portion
+  of resources to the coordinator. Storage capped at 100 GB.
+- [x] Attempts coordinator registration; on failure, runs local-only with 60s background retry.
+- [x] Starts HTTP server and heartbeat loop in parallel.
+- [x] CLI flag: `--contribute-percent`, env var: `FERRIS_CONTRIBUTE_PERCENT`.
+
+### Cross-Platform Release
+
+- [x] GitHub Actions release workflow (`.github/workflows/release.yml`):
+  macOS x86_64 + aarch64, Linux x86_64 + aarch64, Windows x86_64.
+- [x] SHA256 checksums in release artifacts.
+- [x] Install script (`scripts/install.sh`): detects OS/arch, downloads binary from GitHub Releases.
+
+### CI Hardening
+
+- [x] `cargo audit` in CI (advisory database check).
+- [x] `cargo deny` in CI (license + advisory + ban checks).
+- [x] DCO sign-off check on pull requests.
+- [x] Dependabot for Cargo + GitHub Actions dependency updates.
+- [x] `Cargo.lock` committed (binary workspace).
+
+## 10) Quality Gates — ALL PASSING
 
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
 - [x] `cargo test --workspace` — 51 tests, all passing
@@ -169,3 +196,7 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] No dead code or unused types
 - [x] Configurable via TOML + env overrides (all sections)
 - [x] E2E verified: node → coordinator → inference routing → settlement
+- [x] No TODO/FIXME/HACK comments in codebase
+- [x] SECURITY.md with 24hr acknowledgment SLA
+- [x] CHANGELOG.md following Keep a Changelog format
+- [x] `deny.toml` for license compliance auditing

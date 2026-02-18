@@ -1,15 +1,37 @@
-.DS_Store
-references/
-*.tmp
-setup.sh
-bootstrap.sh
+# Build
 target/
-Cargo.lock
-.env
+
+# OS
+.DS_Store
+**/.DS_Store
+*.tmp
+
+# IDE
 .idea/
 .vscode/
+.cursor/
 *.code-workspace
+
+# Environment
+.env
+.env.*
+
+# SQLite databases (local state)
 *.db
 *.db-wal
 *.db-shm
-.cursor/
+
+# Scripts that contain secrets or are machine-specific
+setup.sh
+bootstrap.sh
+
+# Debug
+*.pdb
+*.log
+*.orig
+
+# Reference material (not part of the project)
+references/
+
+# Distribution
+dist/
