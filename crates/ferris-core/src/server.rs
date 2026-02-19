@@ -155,13 +155,7 @@ pub fn build_app(
     inference: Arc<OllamaProxy>,
     agent_id: &str,
 ) -> Router {
-    let state = AppState {
-        memory,
-        storage,
-        tasks,
-        inference,
-        agent_id: agent_id.into(),
-    };
+    let state = AppState { memory, storage, tasks, inference, agent_id: agent_id.into() };
 
     Router::new()
         .route("/health", get(health))
@@ -182,10 +176,7 @@ pub fn build_app(
 // ── Handlers ────────────────────────────────────────────────────────────
 
 async fn health() -> Json<HealthResp> {
-    Json(HealthResp {
-        status: "ok",
-        service: "openferris",
-    })
+    Json(HealthResp { status: "ok", service: "openferris" })
 }
 
 async fn status(State(s): State<AppState>) -> impl IntoResponse {
@@ -197,24 +188,15 @@ async fn status(State(s): State<AppState>) -> impl IntoResponse {
         .fetch_one(s.storage.pool())
         .await
         .unwrap_or(0);
-    let active_tasks: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE enabled = 1")
-            .fetch_one(s.tasks.pool())
-            .await
-            .unwrap_or(0);
+    let active_tasks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE enabled = 1")
+        .fetch_one(s.tasks.pool())
+        .await
+        .unwrap_or(0);
 
-    Json(StatusResp {
-        status: "ok",
-        memories,
-        objects,
-        active_tasks,
-    })
+    Json(StatusResp { status: "ok", memories, objects, active_tasks })
 }
 
-async fn remember(
-    State(s): State<AppState>,
-    Json(req): Json<RememberReq>,
-) -> impl IntoResponse {
+async fn remember(State(s): State<AppState>, Json(req): Json<RememberReq>) -> impl IntoResponse {
     match s.memory.remember(&req.key, &req.value, req.metadata).await {
         Ok(entry) => match serde_json::to_value(&entry) {
             Ok(v) => (StatusCode::OK, Json(v)).into_response(),
@@ -224,10 +206,7 @@ async fn remember(
     }
 }
 
-async fn recall(
-    State(s): State<AppState>,
-    Json(req): Json<RecallReq>,
-) -> impl IntoResponse {
+async fn recall(State(s): State<AppState>, Json(req): Json<RecallReq>) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10);
     match s.memory.recall(&req.query, limit).await {
         Ok(entries) => match serde_json::to_value(&entries) {
@@ -238,10 +217,7 @@ async fn recall(
     }
 }
 
-async fn forget(
-    State(s): State<AppState>,
-    Path(key): Path<String>,
-) -> impl IntoResponse {
+async fn forget(State(s): State<AppState>, Path(key): Path<String>) -> impl IntoResponse {
     match s.memory.forget(&key).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(ferris_common::FerrisError::NotFound(_)) => {
@@ -251,10 +227,7 @@ async fn forget(
     }
 }
 
-async fn store(
-    State(s): State<AppState>,
-    Json(req): Json<StoreReq>,
-) -> impl IntoResponse {
+async fn store(State(s): State<AppState>, Json(req): Json<StoreReq>) -> impl IntoResponse {
     let bytes = match STANDARD.decode(&req.data_base64) {
         Ok(v) => v,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid base64").into_response(),
@@ -273,10 +246,7 @@ async fn store(
     }
 }
 
-async fn list_files(
-    State(s): State<AppState>,
-    Query(q): Query<ListQuery>,
-) -> impl IntoResponse {
+async fn list_files(State(s): State<AppState>, Query(q): Query<ListQuery>) -> impl IntoResponse {
     match s.storage.list_files(q.prefix.as_deref()).await {
         Ok(files) => {
             let entries: Vec<FileEntry> = files
@@ -294,10 +264,7 @@ async fn list_files(
     }
 }
 
-async fn retrieve(
-    State(s): State<AppState>,
-    Path(file_id): Path<String>,
-) -> impl IntoResponse {
+async fn retrieve(State(s): State<AppState>, Path(file_id): Path<String>) -> impl IntoResponse {
     match s.storage.retrieve(&file_id).await {
         Ok((info, data)) => (
             StatusCode::OK,
@@ -335,10 +302,7 @@ async fn list_tasks(State(s): State<AppState>) -> impl IntoResponse {
     }
 }
 
-async fn cancel_task(
-    State(s): State<AppState>,
-    Path(task_id): Path<String>,
-) -> impl IntoResponse {
+async fn cancel_task(State(s): State<AppState>, Path(task_id): Path<String>) -> impl IntoResponse {
     match s.tasks.cancel_task(&task_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(ferris_common::FerrisError::NotFound(_)) => {

@@ -50,11 +50,10 @@ impl ObjectStore {
     /// Store a file with content-addressed deduplication (blake3).
     /// When encryption is enabled, file contents are encrypted before writing to disk.
     pub async fn store(&self, name: &str, data: &[u8]) -> Result<FileInfo> {
-        let used: i64 =
-            sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM objects")
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM objects")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         let max_bytes = self.max_mb * 1024 * 1024;
         if used as u64 + data.len() as u64 > max_bytes {
@@ -79,7 +78,9 @@ impl ObjectStore {
         let subdir = &hash_hex[..2];
         let file_path = self.objects_dir.join(subdir).join(&hash_hex);
         if !file_path.exists() {
-            tokio::fs::create_dir_all(file_path.parent().unwrap()).await?;
+            if let Some(parent) = file_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
             tokio::fs::write(&file_path, &disk_data).await?;
         }
 
@@ -184,11 +185,7 @@ mod tests {
 
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(&db_path)
-                    .create_if_missing(true),
-            )
+            .connect_with(SqliteConnectOptions::new().filename(&db_path).create_if_missing(true))
             .await
             .unwrap();
 

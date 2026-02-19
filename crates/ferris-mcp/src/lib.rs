@@ -93,26 +93,15 @@ impl FerrisMcpServer {
         storage: Arc<ObjectStore>,
         tasks: Arc<TaskScheduler>,
     ) -> Self {
-        Self {
-            agent_id,
-            memory,
-            storage,
-            tasks,
-            tool_router: Self::tool_router(),
-        }
+        Self { agent_id, memory, storage, tasks, tool_router: Self::tool_router() }
     }
 
     #[tool(description = "Returns the agent's identity (agent_id)")]
     async fn whoami(&self) -> Result<CallToolResult, McpError> {
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "agent_id: {}",
-            self.agent_id
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(format!("agent_id: {}", self.agent_id))]))
     }
 
-    #[tool(
-        description = "Store a key-value memory. Updates value if the key already exists."
-    )]
+    #[tool(description = "Store a key-value memory. Updates value if the key already exists.")]
     async fn remember(
         &self,
         Parameters(p): Parameters<RememberParams>,
@@ -179,9 +168,7 @@ impl FerrisMcpServer {
             .map_err(|e| mcp_internal(e.to_string()))
     }
 
-    #[tool(
-        description = "Retrieve a stored file by ID. Returns metadata and base64-encoded data."
-    )]
+    #[tool(description = "Retrieve a stored file by ID. Returns metadata and base64-encoded data.")]
     async fn retrieve(
         &self,
         Parameters(p): Parameters<RetrieveParams>,
@@ -300,9 +287,6 @@ pub async fn serve_stdio(
         .serve(stdio())
         .await
         .map_err(|e| FerrisError::Config(format!("MCP server start failed: {e}")))?;
-    service
-        .waiting()
-        .await
-        .map_err(|e| FerrisError::Config(format!("MCP server error: {e}")))?;
+    service.waiting().await.map_err(|e| FerrisError::Config(format!("MCP server error: {e}")))?;
     Ok(())
 }

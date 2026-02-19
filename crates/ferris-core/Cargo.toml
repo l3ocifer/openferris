@@ -20,6 +20,7 @@ ferris-net = { path = "../ferris-net" }
 ferris-storage = { path = "../ferris-storage", features = ["encryption"] }
 ferris-tasks = { path = "../ferris-tasks" }
 rand.workspace = true
+rand_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

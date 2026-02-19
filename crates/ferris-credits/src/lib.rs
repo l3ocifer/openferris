@@ -1,5 +1,5 @@
 use ferris_common::{
-    platform_fee, unix_timestamp, FerrisError, Result, SIGNUP_BONUS_MC, WalletBalance,
+    platform_fee, unix_timestamp, FerrisError, Result, WalletBalance, SIGNUP_BONUS_MC,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -172,21 +172,18 @@ impl CreditLedger {
         let fee = platform_fee(amount_mc);
         let provider_payout = amount_mc - fee;
 
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
         // Check consumer has enough balance (soft or hard)
-        let row = sqlx::query(
-            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
-        )
-        .bind(consumer_id)
-        .fetch_optional(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?
-        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {consumer_id}")))?;
+        let row =
+            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
+                .bind(consumer_id)
+                .fetch_optional(&mut *txn)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?
+                .ok_or_else(|| {
+                    FerrisError::NotFound(format!("credits for agent: {consumer_id}"))
+                })?;
 
         let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
         let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
@@ -249,9 +246,7 @@ impl CreditLedger {
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        txn.commit()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        txn.commit().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
         Ok(Transaction {
             tx_id,
@@ -286,20 +281,15 @@ impl CreditLedger {
         let fee = platform_fee(amount_mc);
         let provider_payout = amount_mc - fee;
 
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        let row = sqlx::query(
-            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
-        )
-        .bind(owner_id)
-        .fetch_optional(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?
-        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {owner_id}")))?;
+        let row =
+            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
+                .bind(owner_id)
+                .fetch_optional(&mut *txn)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?
+                .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {owner_id}")))?;
 
         let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
         let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
@@ -356,9 +346,7 @@ impl CreditLedger {
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        txn.commit()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        txn.commit().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
         Ok(Transaction {
             tx_id,
@@ -412,21 +400,16 @@ impl CreditLedger {
         let now = unix_timestamp();
         let escrow_id = Uuid::now_v7().to_string();
 
-        let mut txn = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
         // Check balance
-        let row = sqlx::query(
-            "SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?",
-        )
-        .bind(buyer_id)
-        .fetch_optional(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?
-        .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {buyer_id}")))?;
+        let row =
+            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
+                .bind(buyer_id)
+                .fetch_optional(&mut *txn)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?
+                .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {buyer_id}")))?;
 
         let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
         let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
@@ -468,9 +451,7 @@ impl CreditLedger {
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        txn.commit()
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+        txn.commit().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
         Ok(EscrowEntry {
             escrow_id,
@@ -539,14 +520,12 @@ impl CreditLedger {
         let amount_mc: i64 = row.get("amount_mc");
 
         // Refund to buyer (hard balance since we don't track original type)
-        sqlx::query(
-            "UPDATE credits SET hard_balance_mc = hard_balance_mc + ? WHERE agent_id = ?",
-        )
-        .bind(amount_mc)
-        .bind(&buyer_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
+        sqlx::query("UPDATE credits SET hard_balance_mc = hard_balance_mc + ? WHERE agent_id = ?")
+            .bind(amount_mc)
+            .bind(&buyer_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         sqlx::query("UPDATE escrow SET status = 'refunded' WHERE escrow_id = ?")
             .bind(escrow_id)
@@ -623,11 +602,7 @@ mod tests {
     async fn setup() -> (CreditLedger, SqlitePool) {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(":memory:")
-                    .create_if_missing(true),
-            )
+            .connect_with(SqliteConnectOptions::new().filename(":memory:").create_if_missing(true))
             .await
             .unwrap();
         run_schema(&pool).await;
@@ -721,10 +696,7 @@ mod tests {
         ledger.create_account("agent-a").await.unwrap();
         ledger.create_account("agent-b").await.unwrap();
 
-        let escrow = ledger
-            .hold_escrow("job-1", "agent-a", "agent-b", 5000, 300)
-            .await
-            .unwrap();
+        let escrow = ledger.hold_escrow("job-1", "agent-a", "agent-b", 5000, 300).await.unwrap();
         assert_eq!(escrow.status, "held");
 
         let a_bal = ledger.get_balance("agent-a").await.unwrap();
@@ -742,18 +714,12 @@ mod tests {
         ledger.create_account("agent-a").await.unwrap();
         ledger.create_account("agent-b").await.unwrap();
 
-        let escrow = ledger
-            .hold_escrow("job-2", "agent-a", "agent-b", 3000, 300)
-            .await
-            .unwrap();
+        let escrow = ledger.hold_escrow("job-2", "agent-a", "agent-b", 3000, 300).await.unwrap();
 
         ledger.refund_escrow(&escrow.escrow_id).await.unwrap();
         let a_bal = ledger.get_balance("agent-a").await.unwrap();
         // Refund goes to hard balance
-        assert_eq!(
-            a_bal.soft_balance_mc + a_bal.hard_balance_mc,
-            SIGNUP_BONUS_MC
-        );
+        assert_eq!(a_bal.soft_balance_mc + a_bal.hard_balance_mc, SIGNUP_BONUS_MC);
     }
 
     #[tokio::test]

@@ -18,16 +18,16 @@ jobs:
           components: clippy,rustfmt
 
       - name: Cargo check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
       - name: Cargo fmt
         run: cargo fmt --all -- --check
 
       - name: Cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   security:
     runs-on: ubuntu-latest

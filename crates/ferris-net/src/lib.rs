@@ -67,14 +67,10 @@ impl CoordinatorClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(FerrisError::Network(format!(
-                "register rejected ({status}): {text}"
-            )));
+            return Err(FerrisError::Network(format!("register rejected ({status}): {text}")));
         }
 
-        resp.json()
-            .await
-            .map_err(|e| FerrisError::Network(format!("register parse: {e}")))
+        resp.json().await.map_err(|e| FerrisError::Network(format!("register parse: {e}")))
     }
 
     /// Send a heartbeat to the coordinator.
@@ -96,14 +92,10 @@ impl CoordinatorClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(FerrisError::Network(format!(
-                "heartbeat rejected ({status}): {text}"
-            )));
+            return Err(FerrisError::Network(format!("heartbeat rejected ({status}): {text}")));
         }
 
-        resp.json()
-            .await
-            .map_err(|e| FerrisError::Network(format!("heartbeat parse: {e}")))
+        resp.json().await.map_err(|e| FerrisError::Network(format!("heartbeat parse: {e}")))
     }
 
     /// Query wallet balance.
@@ -126,9 +118,7 @@ impl CoordinatorClient {
             return Err(FerrisError::Network(format!("balance query: {text}")));
         }
 
-        resp.json()
-            .await
-            .map_err(|e| FerrisError::Network(format!("balance parse: {e}")))
+        resp.json().await.map_err(|e| FerrisError::Network(format!("balance parse: {e}")))
     }
 }
 
@@ -186,7 +176,7 @@ mod tests {
 
     #[test]
     fn sign_payload_produces_valid_signature() {
-        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
+        let signing_key = SigningKey::generate(&mut rand_core::OsRng);
         let verifying_key: VerifyingKey = signing_key.verifying_key();
 
         let client = CoordinatorClient::new("http://localhost:9999", "test-agent", signing_key);
@@ -195,14 +185,9 @@ mod tests {
         let sig_b64 = client.sign_payload_for_test(payload);
 
         let sig_bytes = STANDARD.decode(&sig_b64).expect("valid base64");
-        let signature = Signature::from_bytes(
-            &sig_bytes
-                .try_into()
-                .expect("signature should be 64 bytes"),
-        );
+        let signature =
+            Signature::from_bytes(&sig_bytes.try_into().expect("signature should be 64 bytes"));
 
-        verifying_key
-            .verify(payload, &signature)
-            .expect("signature should be valid");
+        verifying_key.verify(payload, &signature).expect("signature should be valid");
     }
 }

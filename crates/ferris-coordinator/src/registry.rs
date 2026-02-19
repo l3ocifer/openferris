@@ -118,10 +118,7 @@ impl AgentRegistry {
         .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(FerrisError::NotFound(format!(
-                "agent not registered: {}",
-                req.agent_id
-            )));
+            return Err(FerrisError::NotFound(format!("agent not registered: {}", req.agent_id)));
         }
 
         // Update models
@@ -129,10 +126,7 @@ impl AgentRegistry {
             self.upsert_model(&req.agent_id, model).await?;
         }
 
-        Ok(HeartbeatResponse {
-            status: "ok".into(),
-            queued_messages: vec![],
-        })
+        Ok(HeartbeatResponse { status: "ok".into(), queued_messages: vec![] })
     }
 
     /// Run the health monitor: mark degraded and evict stale agents.
@@ -177,11 +171,7 @@ impl AgentRegistry {
     }
 
     /// Adjust an agent's reputation (positive for success, negative for failure).
-    pub async fn adjust_reputation(
-        &self,
-        agent_id: &str,
-        delta: f64,
-    ) -> Result<f64> {
+    pub async fn adjust_reputation(&self, agent_id: &str, delta: f64) -> Result<f64> {
         let new_rep: f64 = sqlx::query_scalar(
             "UPDATE agents SET reputation = MIN(MAX(reputation + ?, 0.0), 100.0)
              WHERE agent_id = ?
@@ -211,21 +201,13 @@ impl AgentRegistry {
 
         let mut awarded = 0u32;
         for agent_id in &active_agents {
-            if self
-                .ledger
-                .award_availability(agent_id, amount_per_agent_mc)
-                .await
-                .is_ok()
-            {
+            if self.ledger.award_availability(agent_id, amount_per_agent_mc).await.is_ok() {
                 awarded += 1;
             }
         }
 
         if awarded > 0 {
-            info!(
-                awarded,
-                amount_per_agent_mc, "availability rewards distributed"
-            );
+            info!(awarded, amount_per_agent_mc, "availability rewards distributed");
         }
 
         Ok(awarded)

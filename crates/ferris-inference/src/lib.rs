@@ -111,10 +111,8 @@ impl OllamaProxy {
             return Err(FerrisError::Inference("ollama /api/tags failed".into()));
         }
 
-        let body: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| FerrisError::Inference(format!("parse tags: {e}")))?;
+        let body: serde_json::Value =
+            resp.json().await.map_err(|e| FerrisError::Inference(format!("parse tags: {e}")))?;
 
         let models = body["models"]
             .as_array()
@@ -123,12 +121,8 @@ impl OllamaProxy {
             .map(|m| {
                 let name = m["name"].as_str().unwrap_or("unknown").to_string();
                 let family = m["details"]["family"].as_str().map(String::from);
-                let param_size = m["details"]["parameter_size"]
-                    .as_str()
-                    .and_then(parse_param_size);
-                let quant = m["details"]["quantization_level"]
-                    .as_str()
-                    .map(String::from);
+                let param_size = m["details"]["parameter_size"].as_str().and_then(parse_param_size);
+                let quant = m["details"]["quantization_level"].as_str().map(String::from);
 
                 ModelInfo {
                     model_name: name,
@@ -178,9 +172,7 @@ impl OllamaProxy {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(FerrisError::Inference(format!(
-                "ollama error ({status}): {text}"
-            )));
+            return Err(FerrisError::Inference(format!("ollama error ({status}): {text}")));
         }
 
         let completion: ChatCompletionResponse = resp
@@ -207,10 +199,7 @@ impl OllamaProxy {
             "inference completed"
         );
 
-        Ok(InferenceResult {
-            response: completion,
-            settlement,
-        })
+        Ok(InferenceResult { response: completion, settlement })
     }
 }
 

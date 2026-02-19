@@ -132,11 +132,7 @@ async fn coordinator_status(State(s): State<AppState>) -> impl IntoResponse {
     let active_agents = s.registry.active_agent_count().await.unwrap_or(0);
     let models = s.router.list_models().await.unwrap_or_default();
 
-    Json(CoordinatorStatus {
-        status: "ok",
-        active_agents,
-        available_models: models.len(),
-    })
+    Json(CoordinatorStatus { status: "ok", active_agents, available_models: models.len() })
 }
 
 async fn wallet_balance(
@@ -155,10 +151,7 @@ async fn wallet_balance(
     };
 
     if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
-        let body = headers
-            .get("X-Timestamp")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let body = headers.get("X-Timestamp").and_then(|v| v.to_str().ok()).unwrap_or("");
         if let Err(e) =
             verify_agent_signature(s.registry.pool(), &agent_id, sig, body.as_bytes()).await
         {
@@ -194,10 +187,7 @@ async fn wallet_history(
     };
 
     if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
-        let body = headers
-            .get("X-Timestamp")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let body = headers.get("X-Timestamp").and_then(|v| v.to_str().ok()).unwrap_or("");
         if let Err(e) =
             verify_agent_signature(s.registry.pool(), &agent_id, sig, body.as_bytes()).await
         {
@@ -234,16 +224,11 @@ async fn chat_completions(
     headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    let consumer_id = headers
-        .get("X-Agent-Id")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
+    let consumer_id = headers.get("X-Agent-Id").and_then(|v| v.to_str().ok()).map(String::from);
 
     if let Some(agent_id) = &consumer_id {
         if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
-            if let Err(e) =
-                verify_agent_signature(s.registry.pool(), agent_id, sig, &body).await
-            {
+            if let Err(e) = verify_agent_signature(s.registry.pool(), agent_id, sig, &body).await {
                 return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
             }
         }
@@ -254,13 +239,11 @@ async fn chat_completions(
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
-    // Step 1: Get ranked candidates (up to 3 for fallback)
+    let is_streaming = req.stream;
+
     let candidates = match s.router.score_candidates(&req.model, None).await {
         Ok(c) if c.is_empty() => {
-            return (
-                StatusCode::NOT_FOUND,
-                format!("no active provider for model: {}", req.model),
-            )
+            return (StatusCode::NOT_FOUND, format!("no active provider for model: {}", req.model))
                 .into_response();
         }
         Ok(c) => c,
@@ -270,9 +253,11 @@ async fn chat_completions(
     };
 
     let max_attempts = candidates.len().min(3);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .unwrap_or_default();
 
-    // Step 2: Try each candidate in ranked order
     for (attempt, candidate) in candidates.into_iter().take(max_attempts).enumerate() {
         let proxy_result = client
             .post(format!("{}/v1/chat/completions", candidate.endpoint_url))
@@ -308,6 +293,11 @@ async fn chat_completions(
             }
         };
 
+        if is_streaming {
+            return stream_sse_passthrough(s, resp, candidate, consumer_id, req.model.clone())
+                .await;
+        }
+
         let completion = match resp.json::<ChatCompletionResponse>().await {
             Ok(c) => c,
             Err(e) => {
@@ -323,68 +313,17 @@ async fn chat_completions(
             }
         };
 
-        // Success — settle credits and return
         let job_id = uuid::Uuid::now_v7().to_string();
-
-        if let Some(consumer) = &consumer_id {
-            let total_tokens =
-                completion.usage.prompt_tokens + completion.usage.completion_tokens;
-            let amount_mc = total_tokens as i64;
-
-            match s
-                .registry
-                .ledger()
-                .settle_inference(
-                    consumer,
-                    &candidate.agent_id,
-                    amount_mc,
-                    &req.model,
-                    completion.usage.prompt_tokens,
-                    completion.usage.completion_tokens,
-                    &job_id,
-                )
-                .await
-            {
-                Ok(tx) => {
-                    if let Err(e) = s
-                        .registry
-                        .adjust_reputation(&candidate.agent_id, 0.1)
-                        .await
-                    {
-                        tracing::warn!(error = %e, "reputation adjustment failed");
-                    }
-
-                    tracing::info!(
-                        job_id,
-                        tx_id = %tx.tx_id,
-                        model = %req.model,
-                        consumer = %consumer,
-                        provider = %candidate.agent_id,
-                        amount_mc,
-                        fee_mc = tx.platform_fee_mc,
-                        attempt = attempt + 1,
-                        "inference settled"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        job_id,
-                        error = %e,
-                        "settlement failed (inference still served)"
-                    );
-                }
-            }
-        } else {
-            tracing::info!(
-                job_id,
-                model = %req.model,
-                provider = %candidate.agent_id,
-                tokens_in = completion.usage.prompt_tokens,
-                tokens_out = completion.usage.completion_tokens,
-                attempt = attempt + 1,
-                "inference routed (anonymous, no settlement)"
-            );
-        }
+        settle_inference_credits(
+            &s,
+            &consumer_id,
+            &candidate.agent_id,
+            &req.model,
+            &completion,
+            &job_id,
+            attempt,
+        )
+        .await;
 
         return match serde_json::to_value(&completion) {
             Ok(v) => (StatusCode::OK, Json(v)).into_response(),
@@ -394,12 +333,199 @@ async fn chat_completions(
 
     (
         StatusCode::BAD_GATEWAY,
-        format!(
-            "all {} providers failed for model: {}",
-            max_attempts, req.model
-        ),
+        format!("all {} providers failed for model: {}", max_attempts, req.model),
     )
         .into_response()
+}
+
+/// Proxy an SSE stream from the upstream provider to the client, capturing
+/// usage data from the final chunk for credit settlement.
+async fn stream_sse_passthrough(
+    s: AppState,
+    resp: reqwest::Response,
+    candidate: crate::router::RouteCandidate,
+    consumer_id: Option<String>,
+    model: String,
+) -> axum::response::Response {
+    let provider_id = candidate.agent_id.clone();
+    let upstream = resp.bytes_stream();
+
+    let s_clone = s.clone();
+    let consumer_clone = consumer_id.clone();
+    let model_clone = model.clone();
+    let provider_clone = provider_id.clone();
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(32);
+
+    let forward_handle = tokio::spawn(async move {
+        use futures::StreamExt;
+        let mut stream = Box::pin(upstream);
+        let mut final_buf = String::new();
+
+        while let Some(item) = stream.next().await {
+            let to_send: Result<axum::body::Bytes, std::io::Error> = match item {
+                Ok(bytes) => {
+                    if let Ok(text) = std::str::from_utf8(&bytes) {
+                        final_buf.push_str(text);
+                        if final_buf.len() > 4096 {
+                            let trim_at = final_buf.len() - 2048;
+                            final_buf = final_buf[trim_at..].to_string();
+                        }
+                    }
+                    Ok(bytes)
+                }
+                Err(e) => Err(std::io::Error::other(e)),
+            };
+            if tx.send(to_send).await.is_err() {
+                break;
+            }
+        }
+
+        // Stream complete — extract usage from the tail and settle
+        if let Err(e) = s_clone.registry.adjust_reputation(&provider_clone, 0.1).await {
+            tracing::warn!(error = %e, "reputation adjustment failed");
+        }
+
+        let usage = extract_stream_usage(&final_buf);
+        if let (Some(consumer), Some((prompt_tokens, completion_tokens))) = (&consumer_clone, usage)
+        {
+            let job_id = uuid::Uuid::now_v7().to_string();
+            let total_tokens = prompt_tokens + completion_tokens;
+            let amount_mc = total_tokens as i64;
+            if let Err(e) = s_clone
+                .registry
+                .ledger()
+                .settle_inference(
+                    consumer,
+                    &provider_clone,
+                    amount_mc,
+                    &model_clone,
+                    prompt_tokens,
+                    completion_tokens,
+                    &job_id,
+                )
+                .await
+            {
+                tracing::warn!(job_id, error = %e, "streaming settlement failed");
+            } else {
+                tracing::info!(
+                    job_id,
+                    model = %model_clone,
+                    consumer = %consumer,
+                    provider = %provider_clone,
+                    amount_mc,
+                    "streaming inference settled"
+                );
+            }
+        } else {
+            tracing::info!(
+                model = %model_clone,
+                provider = %provider_clone,
+                "streaming inference completed (no settlement)"
+            );
+        }
+    });
+
+    // Don't block on the settlement task — it runs in the background
+    drop(forward_handle);
+
+    let body_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(body_stream);
+
+    match axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .body(body)
+    {
+        Ok(resp) => resp.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Extract usage data from the tail of an SSE stream.
+/// Looks for `"usage":{"prompt_tokens":N,"completion_tokens":N,...}` in the final chunks.
+fn extract_stream_usage(tail: &str) -> Option<(u32, u32)> {
+    for line in tail.lines().rev() {
+        let data = line.strip_prefix("data: ")?;
+        if data == "[DONE]" {
+            continue;
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+            if let Some(usage) = v.get("usage") {
+                let prompt = usage.get("prompt_tokens")?.as_u64()? as u32;
+                let completion = usage.get("completion_tokens")?.as_u64()? as u32;
+                return Some((prompt, completion));
+            }
+        }
+    }
+    None
+}
+
+async fn settle_inference_credits(
+    s: &AppState,
+    consumer_id: &Option<String>,
+    provider_id: &str,
+    model: &str,
+    completion: &ChatCompletionResponse,
+    job_id: &str,
+    attempt: usize,
+) {
+    if let Some(consumer) = consumer_id {
+        let total_tokens = completion.usage.prompt_tokens + completion.usage.completion_tokens;
+        let amount_mc = total_tokens as i64;
+
+        match s
+            .registry
+            .ledger()
+            .settle_inference(
+                consumer,
+                provider_id,
+                amount_mc,
+                model,
+                completion.usage.prompt_tokens,
+                completion.usage.completion_tokens,
+                job_id,
+            )
+            .await
+        {
+            Ok(tx) => {
+                if let Err(e) = s.registry.adjust_reputation(provider_id, 0.1).await {
+                    tracing::warn!(error = %e, "reputation adjustment failed");
+                }
+
+                tracing::info!(
+                    job_id,
+                    tx_id = %tx.tx_id,
+                    model = %model,
+                    consumer = %consumer,
+                    provider = %provider_id,
+                    amount_mc,
+                    fee_mc = tx.platform_fee_mc,
+                    attempt = attempt + 1,
+                    "inference settled"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    job_id,
+                    error = %e,
+                    "settlement failed (inference still served)"
+                );
+            }
+        }
+    } else {
+        tracing::info!(
+            job_id,
+            model = %model,
+            provider = %provider_id,
+            tokens_in = completion.usage.prompt_tokens,
+            tokens_out = completion.usage.completion_tokens,
+            attempt = attempt + 1,
+            "inference routed (anonymous, no settlement)"
+        );
+    }
 }
 
 async fn directory(State(s): State<AppState>) -> impl IntoResponse {
@@ -428,11 +554,10 @@ async fn dashboard_stats(State(s): State<AppState>) -> impl IntoResponse {
     let active_agents: i64 = s.registry.active_agent_count().await.unwrap_or(0);
     let models = s.router.list_models().await.unwrap_or_default();
 
-    let total_transactions: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
-            .fetch_one(s.registry.ledger().pool())
-            .await
-            .unwrap_or(0);
+    let total_transactions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM transactions")
+        .fetch_one(s.registry.ledger().pool())
+        .await
+        .unwrap_or(0);
 
     let total_volume_mc: i64 =
         sqlx::query_scalar("SELECT COALESCE(SUM(amount_mc), 0) FROM transactions")
@@ -514,9 +639,7 @@ async fn network_store(
         None => return (StatusCode::BAD_REQUEST, "X-Signature header required").into_response(),
     };
 
-    if let Err(e) =
-        verify_agent_signature(s.registry.pool(), &agent_id, &signature, &body).await
-    {
+    if let Err(e) = verify_agent_signature(s.registry.pool(), &agent_id, &signature, &body).await {
         return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
     }
 
@@ -531,11 +654,7 @@ async fn network_store(
     let data = match STANDARD.decode(&req.data_base64) {
         Ok(d) => d,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("invalid base64 data: {e}"),
-            )
-                .into_response()
+            return (StatusCode::BAD_REQUEST, format!("invalid base64 data: {e}")).into_response()
         }
     };
 
@@ -560,10 +679,7 @@ async fn network_store(
     });
 
     let proxy_result = client
-        .post(format!(
-            "{}/api/v1/storage/store",
-            candidate.endpoint_url
-        ))
+        .post(format!("{}/api/v1/storage/store", candidate.endpoint_url))
         .json(&proxy_body)
         .send()
         .await;
@@ -574,13 +690,7 @@ async fn network_store(
 
             let object_id = match s
                 .storage_router
-                .record_object(
-                    &agent_id,
-                    &candidate.agent_id,
-                    &req.name,
-                    size_bytes,
-                    &content_hash,
-                )
+                .record_object(&agent_id, &candidate.agent_id, &req.name, size_bytes, &content_hash)
                 .await
             {
                 Ok(id) => id,
@@ -596,19 +706,11 @@ async fn network_store(
             match s
                 .registry
                 .ledger()
-                .settle_storage(
-                    &agent_id,
-                    &candidate.agent_id,
-                    amount_mc,
-                    &object_id,
-                    size_bytes,
-                )
+                .settle_storage(&agent_id, &candidate.agent_id, amount_mc, &object_id, size_bytes)
                 .await
             {
                 Ok(tx) => {
-                    if let Err(e) =
-                        s.registry.adjust_reputation(&candidate.agent_id, 0.1).await
-                    {
+                    if let Err(e) = s.registry.adjust_reputation(&candidate.agent_id, 0.1).await {
                         tracing::warn!(error = %e, "reputation adjustment failed");
                     }
 
@@ -645,17 +747,12 @@ async fn network_store(
         Ok(resp) => {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("storage node error ({status}): {text}"),
-            )
+            (StatusCode::BAD_GATEWAY, format!("storage node error ({status}): {text}"))
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            format!("storage node unreachable: {e}"),
-        )
-            .into_response(),
+        Err(e) => {
+            (StatusCode::BAD_GATEWAY, format!("storage node unreachable: {e}")).into_response()
+        }
     }
 }
 
@@ -713,23 +810,14 @@ async fn network_retrieve(
     let endpoint_url = match endpoint_url {
         Some(url) => url,
         None => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                "storage node endpoint not found",
-            )
-                .into_response();
+            return (StatusCode::BAD_GATEWAY, "storage node endpoint not found").into_response();
         }
     };
 
     // Proxy retrieval to the storage node
     let client = reqwest::Client::new();
-    let proxy_result = client
-        .get(format!(
-            "{}/api/v1/storage/{}",
-            endpoint_url, object_id
-        ))
-        .send()
-        .await;
+    let proxy_result =
+        client.get(format!("{}/api/v1/storage/{}", endpoint_url, object_id)).send().await;
 
     match proxy_result {
         Ok(resp) if resp.status().is_success() => {
@@ -749,16 +837,11 @@ async fn network_retrieve(
         Ok(resp) => {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("storage node error ({status}): {text}"),
-            )
+            (StatusCode::BAD_GATEWAY, format!("storage node error ({status}): {text}"))
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            format!("storage node unreachable: {e}"),
-        )
-            .into_response(),
+        Err(e) => {
+            (StatusCode::BAD_GATEWAY, format!("storage node unreachable: {e}")).into_response()
+        }
     }
 }

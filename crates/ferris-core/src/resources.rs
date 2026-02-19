@@ -9,19 +9,10 @@ pub fn detect() -> ResourceManifest {
     let ram_mb = sys.total_memory() / (1024 * 1024);
 
     let disks = Disks::new_with_refreshed_list();
-    let storage_avail_mb = disks
-        .iter()
-        .map(|d| d.available_space())
-        .max()
-        .unwrap_or(0)
-        / (1024 * 1024);
+    let storage_avail_mb =
+        disks.iter().map(|d| d.available_space()).max().unwrap_or(0) / (1024 * 1024);
 
-    ResourceManifest {
-        cpu_cores,
-        ram_mb,
-        storage_avail_mb,
-        gpu: detect_gpu(),
-    }
+    ResourceManifest { cpu_cores, ram_mb, storage_avail_mb, gpu: detect_gpu() }
 }
 
 fn detect_gpu() -> Option<GpuInfo> {
@@ -31,10 +22,7 @@ fn detect_gpu() -> Option<GpuInfo> {
         // since GPU and CPU share the same memory pool.
         let sys = System::new_all();
         let vram_mb = sys.total_memory() / (1024 * 1024);
-        return Some(GpuInfo {
-            name: "Apple Silicon".into(),
-            vram_mb,
-        });
+        return Some(GpuInfo { name: "Apple Silicon".into(), vram_mb });
     }
 
     #[allow(unreachable_code)]

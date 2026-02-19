@@ -76,8 +76,7 @@ enum Commands {
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("ferris=info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ferris=info")),
         )
         .init();
 
@@ -85,13 +84,7 @@ async fn main() {
     let data_dir = ferris_core::resolve_data_dir(cli.data_dir.as_deref());
 
     let result = match cli.command {
-        Commands::Start {
-            host,
-            port,
-            contribute_percent,
-            region,
-            coordinator_url,
-        } => {
+        Commands::Start { host, port, contribute_percent, region, coordinator_url } => {
             cmd_start(
                 &data_dir,
                 &host,
@@ -103,16 +96,10 @@ async fn main() {
             .await
         }
         Commands::Init { agent_name } => cmd_init(&data_dir, &agent_name).await,
-        Commands::Serve {
-            transport,
-            host,
-            port,
-        } => cmd_serve(&data_dir, transport.as_deref(), &host, port).await,
-        Commands::Join {
-            coordinator_url,
-            endpoint_url,
-            region,
-        } => {
+        Commands::Serve { transport, host, port } => {
+            cmd_serve(&data_dir, transport.as_deref(), &host, port).await
+        }
+        Commands::Join { coordinator_url, endpoint_url, region } => {
             cmd_join(
                 &data_dir,
                 coordinator_url.as_deref(),
@@ -198,10 +185,7 @@ async fn cmd_start(
     }
 
     println!();
-    println!(
-        "Contributing {}% of resources:",
-        contribute_pct
-    );
+    println!("Contributing {}% of resources:", contribute_pct);
     println!(
         "  cpu: {} cores, ram: {} MB, storage: {} MB",
         contributed.cpu_cores, contributed.ram_mb, contributed.storage_avail_mb
@@ -219,11 +203,8 @@ async fn cmd_start(
     let public_key = identity.public_key_bytes().to_vec();
     let cipher = ferris_crypto::Cipher::from_secret_key_bytes(&identity.signing_key.to_bytes());
 
-    let client = ferris_net::CoordinatorClient::new(
-        &coordinator_url,
-        &agent_id,
-        identity.signing_key,
-    );
+    let client =
+        ferris_net::CoordinatorClient::new(&coordinator_url, &agent_id, identity.signing_key);
 
     let reg_req = ferris_common::RegisterRequest {
         agent_id: agent_id.clone(),
@@ -243,10 +224,7 @@ async fn cmd_start(
             println!();
             println!("Network: connected to coordinator");
             if resp.signup_bonus_mc > 0 {
-                println!(
-                    "  signup bonus: {:.1} credits",
-                    resp.signup_bonus_mc as f64 / 1000.0
-                );
+                println!("  signup bonus: {:.1} credits", resp.signup_bonus_mc as f64 / 1000.0);
             }
             true
         }
@@ -412,13 +390,9 @@ async fn cmd_serve(
     let pool = ferris_core::init_pool(&db_path).await?;
     ferris_core::run_migrations(&pool).await?;
 
-    let identity = ferris_core::identity::Identity::load(&pool)
-        .await?
-        .ok_or_else(|| {
-            ferris_common::FerrisError::Config(
-                "identity missing — run `ferris init` first".into(),
-            )
-        })?;
+    let identity = ferris_core::identity::Identity::load(&pool).await?.ok_or_else(|| {
+        ferris_common::FerrisError::Config("identity missing — run `ferris init` first".into())
+    })?;
 
     let transport = transport_override.unwrap_or(&config.mcp.transport);
 
@@ -474,21 +448,16 @@ async fn cmd_join(
     }
 
     let pool = ferris_core::init_pool(&db_path).await?;
-    let identity = ferris_core::identity::Identity::load(&pool)
-        .await?
-        .ok_or_else(|| {
-            ferris_common::FerrisError::Config(
-                "identity missing — run `ferris init` first".into(),
-            )
-        })?;
+    let identity = ferris_core::identity::Identity::load(&pool).await?.ok_or_else(|| {
+        ferris_common::FerrisError::Config("identity missing — run `ferris init` first".into())
+    })?;
 
     let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
     let agent_id = identity.agent_id.clone();
     let public_key = identity.public_key_bytes().to_vec();
     let client = ferris_net::CoordinatorClient::new(url, &agent_id, identity.signing_key);
 
-    let resources = ferris_core::resources::detect()
-        .contributed(config.network.contribute_percent);
+    let resources = ferris_core::resources::detect().contributed(config.network.contribute_percent);
 
     let ollama = ferris_inference::OllamaProxy::new(
         &config.inference.ollama_url,
@@ -521,20 +490,14 @@ async fn cmd_join(
     let resp = client.register(&req).await?;
     println!("registration: {}", resp.message);
     if resp.signup_bonus_mc > 0 {
-        println!(
-            "signup bonus: {} credits",
-            resp.signup_bonus_mc as f64 / 1000.0
-        );
+        println!("signup bonus: {} credits", resp.signup_bonus_mc as f64 / 1000.0);
     }
 
     pool.close().await;
     Ok(())
 }
 
-async fn cmd_balance(
-    data_dir: &Path,
-    coordinator_url: Option<&str>,
-) -> ferris_common::Result<()> {
+async fn cmd_balance(data_dir: &Path, coordinator_url: Option<&str>) -> ferris_common::Result<()> {
     let config = ferris_core::load_config(data_dir)?;
     let db_path = data_dir.join("ferris.db");
 
@@ -545,13 +508,9 @@ async fn cmd_balance(
     }
 
     let pool = ferris_core::init_pool(&db_path).await?;
-    let identity = ferris_core::identity::Identity::load(&pool)
-        .await?
-        .ok_or_else(|| {
-            ferris_common::FerrisError::Config(
-                "identity missing — run `ferris init` first".into(),
-            )
-        })?;
+    let identity = ferris_core::identity::Identity::load(&pool).await?.ok_or_else(|| {
+        ferris_common::FerrisError::Config("identity missing — run `ferris init` first".into())
+    })?;
 
     let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
     let client =
@@ -588,19 +547,14 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
     let identity = ferris_core::identity::Identity::load(&pool).await?;
     let resources = ferris_core::resources::detect();
 
-    let mem_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memories")
+    let mem_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM memories").fetch_one(&pool).await.unwrap_or(0);
+    let obj_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM objects").fetch_one(&pool).await.unwrap_or(0);
+    let task_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE enabled = 1")
         .fetch_one(&pool)
         .await
         .unwrap_or(0);
-    let obj_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects")
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-    let task_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE enabled = 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap_or(0);
 
     let ollama = ferris_inference::OllamaProxy::new(
         &config.inference.ollama_url,

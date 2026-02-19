@@ -14,11 +14,13 @@ base64.workspace = true
 blake3.workspace = true
 clap.workspace = true
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
+futures = "0.3"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
+tokio-stream = "0.1"
 tower = { version = "0.5", features = ["limit"] }
 tower-http = { version = "0.6", features = ["limit", "cors"] }
 tracing.workspace = true

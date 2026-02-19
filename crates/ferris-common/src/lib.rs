@@ -123,24 +123,15 @@ pub struct InferenceConfig {
 
 impl Default for InferenceConfig {
     fn default() -> Self {
-        Self {
-            ollama_url: "http://localhost:11434".into(),
-            max_concurrent_requests: 4,
-        }
+        Self { ollama_url: "http://localhost:11434".into(), max_concurrent_requests: 4 }
     }
 }
 
 impl Default for FerrisConfig {
     fn default() -> Self {
         Self {
-            agent: AgentConfig {
-                name: "ferris-agent".into(),
-                data_dir: "~/.ferris".into(),
-            },
-            mcp: McpConfig {
-                transport: "stdio".into(),
-                port: 9420,
-            },
+            agent: AgentConfig { name: "ferris-agent".into(), data_dir: "~/.ferris".into() },
+            mcp: McpConfig { transport: "stdio".into(), port: 9420 },
             memory: MemoryConfig { max_entries: 1000 },
             storage: StorageConfig { max_mb: 100 },
             tasks: TasksConfig { max_scheduled: 10 },

@@ -1,5 +1,4 @@
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
@@ -14,12 +13,9 @@ pub struct Identity {
 impl Identity {
     /// Generate a fresh identity (keypair + agent id).
     pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
+        let signing_key = SigningKey::generate(&mut rand_core::OsRng);
         let agent_id = Uuid::now_v7().to_string();
-        Self {
-            agent_id,
-            signing_key,
-        }
+        Self { agent_id, signing_key }
     }
 
     /// Public key bytes (Ed25519 verifying key).
@@ -51,12 +47,10 @@ impl Identity {
 
     /// Load the node's identity from the database (returns None if uninitialized).
     pub async fn load(pool: &SqlitePool) -> Result<Option<Self>> {
-        let row = sqlx::query(
-            "SELECT agent_id, secret_key_bytes FROM identity LIMIT 1",
-        )
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let row = sqlx::query("SELECT agent_id, secret_key_bytes FROM identity LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         let Some(row) = row else {
             return Ok(None);
@@ -71,9 +65,6 @@ impl Identity {
 
         let signing_key = SigningKey::from_bytes(&secret_array);
 
-        Ok(Some(Self {
-            agent_id,
-            signing_key,
-        }))
+        Ok(Some(Self { agent_id, signing_key }))
     }
 }

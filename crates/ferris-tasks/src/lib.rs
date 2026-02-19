@@ -50,10 +50,7 @@ pub struct TaskScheduler {
 
 impl TaskScheduler {
     pub fn new(pool: SqlitePool, max_scheduled: u32) -> Self {
-        Self {
-            pool,
-            max_scheduled,
-        }
+        Self { pool, max_scheduled }
     }
 
     /// Access the underlying connection pool (for status queries).
@@ -158,9 +155,7 @@ impl TaskScheduler {
         poll_interval_secs: u64,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            tracing::info!(
-                "Task executor started (poll interval: {poll_interval_secs}s)"
-            );
+            tracing::info!("Task executor started (poll interval: {poll_interval_secs}s)");
             loop {
                 if let Err(e) = execute_due_tasks(&pool).await {
                     tracing::error!("Task executor error: {e}");
@@ -196,15 +191,13 @@ async fn execute_due_tasks(pool: &SqlitePool) -> Result<()> {
             let started_at = unix_timestamp();
 
             // Record run start
-            sqlx::query(
-                "INSERT INTO task_runs (id, task_id, started_at) VALUES (?, ?, ?)",
-            )
-            .bind(&run_id)
-            .bind(&task_id)
-            .bind(started_at)
-            .execute(pool)
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+            sqlx::query("INSERT INTO task_runs (id, task_id, started_at) VALUES (?, ?, ?)")
+                .bind(&run_id)
+                .bind(&task_id)
+                .bind(started_at)
+                .execute(pool)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?;
 
             let result = execute_action(&action).await;
             let completed_at = unix_timestamp();
@@ -214,15 +207,13 @@ async fn execute_due_tasks(pool: &SqlitePool) -> Result<()> {
             };
 
             // Record run result
-            sqlx::query(
-                "UPDATE task_runs SET completed_at = ?, result = ? WHERE id = ?",
-            )
-            .bind(completed_at)
-            .bind(&result_text)
-            .bind(&run_id)
-            .execute(pool)
-            .await
-            .map_err(|e| FerrisError::Database(e.to_string()))?;
+            sqlx::query("UPDATE task_runs SET completed_at = ?, result = ? WHERE id = ?")
+                .bind(completed_at)
+                .bind(&result_text)
+                .bind(&run_id)
+                .execute(pool)
+                .await
+                .map_err(|e| FerrisError::Database(e.to_string()))?;
 
             // Update last_run_at
             sqlx::query("UPDATE tasks SET last_run_at = ? WHERE id = ?")
@@ -331,11 +322,7 @@ mod tests {
     async fn test_pool() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(":memory:")
-                    .create_if_missing(true),
-            )
+            .connect_with(SqliteConnectOptions::new().filename(":memory:").create_if_missing(true))
             .await
             .unwrap();
 
@@ -376,10 +363,7 @@ mod tests {
         let scheduler = TaskScheduler::new(pool, 10);
 
         let action = r#"{"type":"log","message":"hello"}"#;
-        let task = scheduler
-            .schedule_task("0 * * * *", action)
-            .await
-            .unwrap();
+        let task = scheduler.schedule_task("0 * * * *", action).await.unwrap();
         assert_eq!(task.schedule, "0 * * * *");
         assert_eq!(task.action, action);
         assert!(task.enabled);
@@ -396,10 +380,7 @@ mod tests {
         let scheduler = TaskScheduler::new(pool, 10);
 
         let action = r#"{"type":"log","message":"test"}"#;
-        let task = scheduler
-            .schedule_task("*/5 * * * *", action)
-            .await
-            .unwrap();
+        let task = scheduler.schedule_task("*/5 * * * *", action).await.unwrap();
         scheduler.cancel_task(&task.task_id).await.unwrap();
 
         let tasks = scheduler.list_tasks().await.unwrap();
@@ -423,10 +404,7 @@ mod tests {
         let action = r#"{"type":"log","message":"x"}"#;
         scheduler.schedule_task("0 * * * *", action).await.unwrap();
         scheduler.schedule_task("0 * * * *", action).await.unwrap();
-        let err = scheduler
-            .schedule_task("0 * * * *", action)
-            .await
-            .unwrap_err();
+        let err = scheduler.schedule_task("0 * * * *", action).await.unwrap_err();
         assert!(matches!(err, FerrisError::CapacityExceeded(_)));
     }
 
@@ -436,10 +414,7 @@ mod tests {
         let scheduler = TaskScheduler::new(pool, 10);
 
         let action = r#"{"type":"log","message":"x"}"#;
-        let err = scheduler
-            .schedule_task("not-a-cron", action)
-            .await
-            .unwrap_err();
+        let err = scheduler.schedule_task("not-a-cron", action).await.unwrap_err();
         assert!(matches!(err, FerrisError::InvalidInput(_)));
     }
 
@@ -466,12 +441,11 @@ mod tests {
         execute_due_tasks(&pool).await.unwrap();
 
         // Verify a run was recorded
-        let runs: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM task_runs WHERE task_id = ?")
-                .bind(&id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let runs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_runs WHERE task_id = ?")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(runs, 1);
 
         // Verify last_run_at was updated
@@ -495,7 +469,9 @@ mod tests {
         let action =
             TaskAction::parse(r#"{"type":"http","url":"https://example.com","body":null}"#)
                 .unwrap();
-        assert!(matches!(action, TaskAction::Http { url, body: None } if url == "https://example.com"));
+        assert!(
+            matches!(action, TaskAction::Http { url, body: None } if url == "https://example.com")
+        );
     }
 
     #[test]

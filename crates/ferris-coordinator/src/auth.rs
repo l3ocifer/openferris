@@ -35,9 +35,8 @@ pub async fn verify_agent_signature(
         .decode(signature_b64)
         .map_err(|e| FerrisError::Auth(format!("invalid signature encoding: {e}")))?;
 
-    let sig_array: [u8; 64] = sig_bytes
-        .try_into()
-        .map_err(|_| FerrisError::Auth("invalid signature length".into()))?;
+    let sig_array: [u8; 64] =
+        sig_bytes.try_into().map_err(|_| FerrisError::Auth("invalid signature length".into()))?;
 
     let signature = Signature::from_bytes(&sig_array);
 

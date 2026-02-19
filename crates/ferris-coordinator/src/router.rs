@@ -38,7 +38,11 @@ impl InferenceRouter {
     }
 
     /// Find the best agent to serve a request for the given model.
-    pub async fn route(&self, model_name: &str, requester_region: Option<&str>) -> Result<RouteCandidate> {
+    pub async fn route(
+        &self,
+        model_name: &str,
+        requester_region: Option<&str>,
+    ) -> Result<RouteCandidate> {
         let candidates = self.score_candidates(model_name, requester_region).await?;
 
         candidates.into_iter().next().ok_or_else(|| {
@@ -101,7 +105,8 @@ impl InferenceRouter {
             })
             .collect();
 
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates
+            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(candidates)
     }
@@ -180,7 +185,8 @@ mod tests {
 
     #[test]
     fn score_perfect_agent() {
-        let score = compute_score(100.0, 100.0, &Some("us-east".into()), Some("us-east"), 0.0, true);
+        let score =
+            compute_score(100.0, 100.0, &Some("us-east".into()), Some("us-east"), 0.0, true);
         // 0.40 + 0.25 + 0.20 + 0.15 + 0.10 = 1.10
         assert!((score - 1.10).abs() < 0.001);
     }

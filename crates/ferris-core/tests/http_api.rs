@@ -19,11 +19,7 @@ async fn setup() -> (axum::Router, TempDir) {
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect_with(
-            SqliteConnectOptions::new()
-                .filename(&db_path)
-                .create_if_missing(true),
-        )
+        .connect_with(SqliteConnectOptions::new().filename(&db_path).create_if_missing(true))
         .await
         .unwrap();
 
@@ -107,10 +103,7 @@ fn json_request(method: Method, uri: &str, body: serde_json::Value) -> Request<B
 #[tokio::test]
 async fn health_endpoint() {
     let (app, _tmp) = setup().await;
-    let resp = app
-        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let resp = app.oneshot(Request::get("/health").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     assert_eq!(body["status"], "ok");
@@ -138,10 +131,8 @@ async fn status_endpoint_counts() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let resp = app
-        .oneshot(Request::get("/api/v1/status").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let resp =
+        app.oneshot(Request::get("/api/v1/status").body(Body::empty()).unwrap()).await.unwrap();
     let body = json_body(resp).await;
     assert_eq!(body["memories"], 1);
 }
@@ -163,11 +154,8 @@ async fn memory_round_trip() {
     assert_eq!(body["value"], "blue");
 
     // Recall
-    let req = json_request(
-        Method::POST,
-        "/api/v1/memory/recall",
-        serde_json::json!({"query": "color"}),
-    );
+    let req =
+        json_request(Method::POST, "/api/v1/memory/recall", serde_json::json!({"query": "color"}));
     let resp = app.clone().oneshot(req).await.unwrap();
     let body = json_body(resp).await;
     let results = body.as_array().unwrap();
@@ -215,11 +203,7 @@ async fn storage_round_trip() {
 
     // Retrieve
     let resp = app
-        .oneshot(
-            Request::get(format!("/api/v1/storage/{file_id}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get(format!("/api/v1/storage/{file_id}")).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -285,11 +269,7 @@ async fn forget_nonexistent_returns_404() {
 async fn retrieve_nonexistent_returns_404() {
     let (app, _tmp) = setup().await;
     let resp = app
-        .oneshot(
-            Request::get("/api/v1/storage/no-such-id")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/api/v1/storage/no-such-id").body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);

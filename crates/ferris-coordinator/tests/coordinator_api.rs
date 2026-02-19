@@ -21,11 +21,7 @@ use tower::ServiceExt;
 async fn setup() -> (axum::Router, SqlitePool) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
-        .connect_with(
-            SqliteConnectOptions::new()
-                .filename(":memory:")
-                .create_if_missing(true),
-        )
+        .connect_with(SqliteConnectOptions::new().filename(":memory:").create_if_missing(true))
         .await
         .unwrap();
 
@@ -173,10 +169,7 @@ fn test_register_request(agent_id: &str) -> RegisterRequest {
 #[tokio::test]
 async fn health_endpoint() {
     let (app, _pool) = setup().await;
-    let resp = app
-        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let resp = app.oneshot(Request::get("/health").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -309,9 +302,7 @@ async fn wallet_balance_after_registration() {
 
     let resp = app
         .oneshot(
-            Request::get("/api/v1/wallet/balance?agent_id=agent-wal")
-                .body(Body::empty())
-                .unwrap(),
+            Request::get("/api/v1/wallet/balance?agent_id=agent-wal").body(Body::empty()).unwrap(),
         )
         .await
         .unwrap();
@@ -334,10 +325,7 @@ async fn list_models_after_registration() {
         .await
         .unwrap();
 
-    let resp = app
-        .oneshot(Request::get("/v1/models").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let resp = app.oneshot(Request::get("/v1/models").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     let models = body["data"].as_array().unwrap();
@@ -359,14 +347,8 @@ async fn coordinator_status_counts() {
         .await
         .unwrap();
 
-    let resp = app
-        .oneshot(
-            Request::get("/api/v1/status")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let resp =
+        app.oneshot(Request::get("/api/v1/status").body(Body::empty()).unwrap()).await.unwrap();
     let body = json_body(resp).await;
     assert_eq!(body["active_agents"], 1);
     assert_eq!(body["available_models"], 1);
@@ -386,14 +368,8 @@ async fn directory_lists_active_agents() {
         .await
         .unwrap();
 
-    let resp = app
-        .oneshot(
-            Request::get("/api/v1/directory")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let resp =
+        app.oneshot(Request::get("/api/v1/directory").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     let entries = body.as_array().unwrap();
@@ -417,14 +393,8 @@ async fn dashboard_stats_endpoint() {
         .await
         .unwrap();
 
-    let resp = app
-        .oneshot(
-            Request::get("/dashboard/stats")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let resp =
+        app.oneshot(Request::get("/dashboard/stats").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     assert_eq!(body["active_agents"], 1);

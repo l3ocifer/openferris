@@ -6,9 +6,7 @@ use ferris_common::{FerrisError, Result};
 
 /// Open (or create) the node-local SQLite database.
 pub async fn init_pool(db_path: &Path) -> Result<SqlitePool> {
-    let options = SqliteConnectOptions::new()
-        .filename(db_path)
-        .create_if_missing(true);
+    let options = SqliteConnectOptions::new().filename(db_path).create_if_missing(true);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)

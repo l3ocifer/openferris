@@ -21,22 +21,17 @@ impl Cipher {
     pub fn from_secret_key_bytes(secret_key: &[u8; 32]) -> Self {
         let hk = Hkdf::<Sha256>::new(None, secret_key);
         let mut aes_key = [0u8; 32];
-        hk.expand(HKDF_INFO, &mut aes_key)
-            .expect("32 bytes is a valid HKDF-SHA256 output length");
+        hk.expand(HKDF_INFO, &mut aes_key).expect("32 bytes is a valid HKDF-SHA256 output length");
 
         let key = Key::<Aes256Gcm>::from_slice(&aes_key);
-        Self {
-            cipher: Aes256Gcm::new(key),
-        }
+        Self { cipher: Aes256Gcm::new(key) }
     }
 
     /// Encrypt plaintext. Returns `nonce || ciphertext || tag`.
     pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = self
-            .cipher
-            .encrypt(&nonce, plaintext)
-            .expect("AES-256-GCM encryption should not fail");
+        let ciphertext =
+            self.cipher.encrypt(&nonce, plaintext).expect("AES-256-GCM encryption should not fail");
 
         let mut out = Vec::with_capacity(NONCE_LEN + ciphertext.len());
         out.extend_from_slice(&nonce);
@@ -53,9 +48,7 @@ impl Cipher {
         let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        self.cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| CryptoError::DecryptionFailed)
+        self.cipher.decrypt(nonce, ciphertext).map_err(|_| CryptoError::DecryptionFailed)
     }
 }
 

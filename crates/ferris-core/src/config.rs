@@ -9,9 +9,7 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> PathBuf {
     } else if let Ok(dir) = std::env::var("FERRIS_DATA_DIR") {
         expand_tilde(&dir)
     } else {
-        dirs::home_dir()
-            .expect("could not determine home directory")
-            .join(".ferris")
+        dirs::home_dir().expect("could not determine home directory").join(".ferris")
     }
 }
 
@@ -49,9 +47,7 @@ pub fn save_default_config(data_dir: &Path, agent_name: &str) -> Result<()> {
 
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        dirs::home_dir()
-            .expect("could not determine home directory")
-            .join(rest)
+        dirs::home_dir().expect("could not determine home directory").join(rest)
     } else if path == "~" {
         dirs::home_dir().expect("could not determine home directory")
     } else {

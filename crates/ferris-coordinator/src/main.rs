@@ -49,9 +49,7 @@ async fn main() {
         .await
         .expect("failed to init coordinator DB");
 
-    ferris_coordinator::run_coordinator_migrations(&pool)
-        .await
-        .expect("failed to run migrations");
+    ferris_coordinator::run_coordinator_migrations(&pool).await.expect("failed to run migrations");
 
     let ledger = CreditLedger::new(pool.clone());
     let registry = AgentRegistry::new(pool.clone(), ledger);

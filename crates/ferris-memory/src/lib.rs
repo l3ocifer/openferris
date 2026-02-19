@@ -37,18 +37,12 @@ impl Embedder {
 
 #[cfg(any(feature = "semantic", test))]
 fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
-    embedding
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect()
+    embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 #[cfg(any(feature = "semantic", test))]
 fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
+    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 
 #[cfg(any(feature = "semantic", test))]
@@ -117,7 +111,10 @@ impl MemoryStore {
     /// Ensure the embedding model is loaded. Returns true if available.
     #[cfg(feature = "semantic")]
     fn ensure_embedder(&self) -> bool {
-        let mut guard = self.embedder.lock().unwrap();
+        let mut guard = match self.embedder.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         if guard.is_some() {
             return true;
         }
@@ -128,7 +125,9 @@ impl MemoryStore {
                 true
             }
             Err(err) => {
-                tracing::warn!("Failed to load embedding model, falling back to text search: {err}");
+                tracing::warn!(
+                    "Failed to load embedding model, falling back to text search: {err}"
+                );
                 false
             }
         }
@@ -137,7 +136,10 @@ impl MemoryStore {
     /// Generate an embedding for the given text (returns None if unavailable).
     #[cfg(feature = "semantic")]
     fn embed_text(&self, text: &str) -> Option<Vec<f32>> {
-        let mut guard = self.embedder.lock().unwrap();
+        let mut guard = match self.embedder.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         guard.as_mut().and_then(|e| match e.embed(text) {
             Ok(v) => Some(v),
             Err(err) => {
@@ -195,12 +197,11 @@ impl MemoryStore {
         #[cfg(not(feature = "encryption"))]
         let stored_value = value.to_string();
 
-        let existing: Option<String> =
-            sqlx::query_scalar("SELECT id FROM memories WHERE key = ?")
-                .bind(key)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| FerrisError::Database(e.to_string()))?;
+        let existing: Option<String> = sqlx::query_scalar("SELECT id FROM memories WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?;
 
         let id = if let Some(existing_id) = existing {
             #[cfg(feature = "semantic")]
@@ -357,16 +358,20 @@ impl MemoryStore {
                 let vector_score = cosine_similarity(query_embedding, &stored_embedding);
 
                 let mut entry = self.row_to_entry(row);
-                let text_match = entry.key.contains(query_text) || entry.value.contains(query_text)
-                    || entry.key.to_lowercase().contains(&text_pattern.to_lowercase().replace('%', ""))
-                    || entry.value.to_lowercase().contains(&text_pattern.to_lowercase().replace('%', ""));
+                let text_match = entry.key.contains(query_text)
+                    || entry.value.contains(query_text)
+                    || entry
+                        .key
+                        .to_lowercase()
+                        .contains(&text_pattern.to_lowercase().replace('%', ""))
+                    || entry
+                        .value
+                        .to_lowercase()
+                        .contains(&text_pattern.to_lowercase().replace('%', ""));
 
                 // Boost score if there's also a text match
-                let combined_score = if text_match {
-                    (vector_score + 0.3).min(1.0)
-                } else {
-                    vector_score
-                };
+                let combined_score =
+                    if text_match { (vector_score + 0.3).min(1.0) } else { vector_score };
 
                 entry.score = Some(combined_score);
                 (combined_score, entry)
@@ -454,11 +459,7 @@ mod tests {
     async fn test_pool() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(":memory:")
-                    .create_if_missing(true),
-            )
+            .connect_with(SqliteConnectOptions::new().filename(":memory:").create_if_missing(true))
             .await
             .unwrap();
 
@@ -516,10 +517,7 @@ mod tests {
         let store = MemoryStore::new(pool, 100);
 
         let meta = serde_json::json!({"source": "test"});
-        let entry = store
-            .remember("k", "v", Some(meta.clone()))
-            .await
-            .unwrap();
+        let entry = store.remember("k", "v", Some(meta.clone())).await.unwrap();
         assert_eq!(entry.metadata, Some(meta));
     }
 
@@ -560,10 +558,7 @@ mod tests {
         let pool = test_pool().await;
         let store = MemoryStore::new(pool, 100);
 
-        store
-            .remember("greeting", "hello world", None)
-            .await
-            .unwrap();
+        store.remember("greeting", "hello world", None).await.unwrap();
         store.remember("farewell", "goodbye", None).await.unwrap();
 
         let by_key = store.recall("greet", 10).await.unwrap();
@@ -581,10 +576,7 @@ mod tests {
         let store = MemoryStore::new(pool, 100);
 
         for i in 0..5 {
-            store
-                .remember(&format!("item{i}"), "data", None)
-                .await
-                .unwrap();
+            store.remember(&format!("item{i}"), "data", None).await.unwrap();
         }
 
         let results = store.recall("item", 3).await.unwrap();
