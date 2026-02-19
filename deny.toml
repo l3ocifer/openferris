@@ -5,10 +5,7 @@
 unmaintained = "workspace"
 unsound = "all"
 yanked = "warn"
-ignore = [
-    # rsa timing side-channel — no fix available, only affects sqlx-mysql which we don't use
-    "RUSTSEC-2023-0071",
-]
+ignore = []
 
 [licenses]
 unused-allowed-license = "allow"
@@ -28,6 +25,7 @@ allow = [
     "OpenSSL",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    "NCSA",
 ]
 
 # BUSL-1.1 is used by ferris-coordinator (our own crate)
