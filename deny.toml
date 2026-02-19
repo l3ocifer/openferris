@@ -5,7 +5,10 @@
 unmaintained = "workspace"
 unsound = "all"
 yanked = "warn"
-ignore = []
+ignore = [
+    # rsa timing side-channel — no fix available, only affects sqlx-mysql which we don't use
+    "RUSTSEC-2023-0071",
+]
 
 [licenses]
 unused-allowed-license = "allow"
