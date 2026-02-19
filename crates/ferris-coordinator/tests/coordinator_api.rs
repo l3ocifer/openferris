@@ -91,6 +91,15 @@ async fn run_schema(pool: &SqlitePool) {
             content_hash TEXT NOT NULL, created_at INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'active'
         )",
+        "CREATE TABLE IF NOT EXISTS message_queue (
+            message_id TEXT PRIMARY KEY,
+            from_agent TEXT NOT NULL REFERENCES agents(agent_id),
+            to_agent TEXT NOT NULL REFERENCES agents(agent_id),
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            delivered_at INTEGER
+        )",
     ];
     for sql in ddl {
         sqlx::query(sql).execute(pool).await.unwrap();
@@ -400,4 +409,206 @@ async fn dashboard_stats_endpoint() {
     assert_eq!(body["active_agents"], 1);
     // Registration creates a signup_bonus transaction
     assert!(body["total_transactions"].as_i64().unwrap() >= 1);
+}
+
+#[tokio::test]
+async fn settle_endpoint_debits_consumer_credits_provider() {
+    let (app, pool) = setup().await;
+
+    let consumer = test_register_request("consumer-settle");
+    let provider = test_register_request("provider-settle");
+
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&consumer).unwrap(),
+        ))
+        .await
+        .unwrap();
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&provider).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let settle_body = serde_json::json!({
+        "job_id": "test-job-1",
+        "consumer_agent": "consumer-settle",
+        "model_name": "llama3:8b",
+        "tokens_in": 100,
+        "tokens_out": 50,
+        "duration_ms": 1500
+    });
+
+    let signing_key = SigningKey::generate(&mut rand_core::OsRng);
+    let body_bytes = serde_json::to_vec(&settle_body).unwrap();
+    let sig = signing_key.sign(&body_bytes);
+    let sig_b64 = STANDARD.encode(sig.to_bytes());
+
+    // Update agent with matching public key for signature verification
+    sqlx::query("UPDATE agents SET public_key = ? WHERE agent_id = ?")
+        .bind(signing_key.verifying_key().to_bytes().to_vec())
+        .bind("provider-settle")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/settle")
+        .header("Content-Type", "application/json")
+        .header("X-Agent-Id", "provider-settle")
+        .header("X-Signature", sig_b64)
+        .body(Body::from(body_bytes))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    assert_eq!(body["settled"], true);
+    assert!(body["tx_id"].as_str().is_some());
+    assert_eq!(body["amount_mc"], 150); // 100 + 50 tokens
+}
+
+#[tokio::test]
+async fn message_send_and_poll_roundtrip() {
+    let (app, pool) = setup().await;
+
+    let sender = test_register_request("sender-msg");
+    let receiver = test_register_request("receiver-msg");
+
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&sender).unwrap(),
+        ))
+        .await
+        .unwrap();
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&receiver).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let send_body = serde_json::json!({
+        "to_agent": "receiver-msg",
+        "payload": {"text": "hello from sender"}
+    });
+
+    let signing_key = SigningKey::generate(&mut rand_core::OsRng);
+    let body_bytes = serde_json::to_vec(&send_body).unwrap();
+    let sig = signing_key.sign(&body_bytes);
+    let sig_b64 = STANDARD.encode(sig.to_bytes());
+
+    sqlx::query("UPDATE agents SET public_key = ? WHERE agent_id = ?")
+        .bind(signing_key.verifying_key().to_bytes().to_vec())
+        .bind("sender-msg")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/messages/send")
+        .header("Content-Type", "application/json")
+        .header("X-Agent-Id", "sender-msg")
+        .header("X-Signature", sig_b64)
+        .body(Body::from(body_bytes))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    assert!(body["message_id"].as_str().is_some());
+
+    // Poll messages for receiver
+    let resp = app
+        .oneshot(
+            Request::get("/api/v1/messages?agent_id=receiver-msg").body(Body::empty()).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    let messages = body.as_array().unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["from_agent"], "sender-msg");
+    assert_eq!(messages[0]["payload"]["text"], "hello from sender");
+}
+
+#[tokio::test]
+async fn message_send_to_unknown_agent_returns_404() {
+    let (app, pool) = setup().await;
+
+    let sender = test_register_request("sender-404");
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&sender).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let send_body = serde_json::json!({
+        "to_agent": "nonexistent-agent",
+        "payload": {"text": "hello?"}
+    });
+
+    let signing_key = SigningKey::generate(&mut rand_core::OsRng);
+    let body_bytes = serde_json::to_vec(&send_body).unwrap();
+    let sig = signing_key.sign(&body_bytes);
+    let sig_b64 = STANDARD.encode(sig.to_bytes());
+
+    sqlx::query("UPDATE agents SET public_key = ? WHERE agent_id = ?")
+        .bind(signing_key.verifying_key().to_bytes().to_vec())
+        .bind("sender-404")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/messages/send")
+        .header("Content-Type", "application/json")
+        .header("X-Agent-Id", "sender-404")
+        .header("X-Signature", sig_b64)
+        .body(Body::from(body_bytes))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn poll_messages_returns_empty_when_none() {
+    let (app, _pool) = setup().await;
+
+    let agent = test_register_request("agent-empty-poll");
+    app.clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/v1/register",
+            serde_json::to_value(&agent).unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::get("/api/v1/messages?agent_id=agent-empty-poll").body(Body::empty()).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    assert_eq!(body.as_array().unwrap().len(), 0);
 }

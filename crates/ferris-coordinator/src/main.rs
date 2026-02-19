@@ -38,18 +38,22 @@ async fn main() {
         )
         .init();
 
+    if let Err(e) = run().await {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let db_path = PathBuf::from(&cli.db_path);
 
     if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).expect("failed to create database directory");
+        std::fs::create_dir_all(parent)?;
     }
 
-    let pool = ferris_coordinator::init_coordinator_pool(&db_path)
-        .await
-        .expect("failed to init coordinator DB");
-
-    ferris_coordinator::run_coordinator_migrations(&pool).await.expect("failed to run migrations");
+    let pool = ferris_coordinator::init_coordinator_pool(&db_path).await?;
+    ferris_coordinator::run_coordinator_migrations(&pool).await?;
 
     let ledger = CreditLedger::new(pool.clone());
     let registry = AgentRegistry::new(pool.clone(), ledger);
@@ -88,8 +92,6 @@ async fn main() {
         storage_router: Arc::new(storage_router),
     };
 
-    if let Err(e) = run_coordinator(state, &cli.host, cli.port).await {
-        eprintln!("error: {e}");
-        std::process::exit(1);
-    }
+    run_coordinator(state, &cli.host, cli.port).await?;
+    Ok(())
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use ferris_core::server::build_app;
-use ferris_inference::OllamaProxy;
+use ferris_inference::OllamaBackend;
 use ferris_memory::MemoryStore;
 use ferris_storage::ObjectStore;
 use ferris_tasks::TaskScheduler;
@@ -29,7 +29,8 @@ async fn setup() -> (axum::Router, TempDir) {
     let memory = Arc::new(MemoryStore::new(pool.clone(), 100));
     let storage = Arc::new(ObjectStore::new(pool.clone(), objects_dir, 100));
     let tasks = Arc::new(TaskScheduler::new(pool, 10));
-    let inference = Arc::new(OllamaProxy::new("http://localhost:11434", 4));
+    let inference: Arc<dyn ferris_inference::InferenceBackend> =
+        Arc::new(OllamaBackend::new("http://localhost:11434", 4).unwrap());
 
     let app = build_app(memory, storage, tasks, inference, "test-agent");
     (app, tmp)

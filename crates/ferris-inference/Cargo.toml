@@ -5,11 +5,33 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+default = ["ollama", "candle-backend"]
+ollama = []
+candle-backend = [
+    "dep:candle-core",
+    "dep:candle-transformers",
+    "dep:tokenizers",
+    "dep:hf-hub",
+]
+mobile = ["candle-backend"]
+
 [dependencies]
+async-trait = "0.1"
 ferris-common = { path = "../ferris-common" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sysinfo.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+# Candle backend (optional)
+candle-core = { version = "0.8", optional = true }
+candle-transformers = { version = "0.8", optional = true }
+tokenizers = { version = "0.21", optional = true, default-features = false, features = ["onig"] }
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+tempfile.workspace = true

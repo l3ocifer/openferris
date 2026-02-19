@@ -195,17 +195,26 @@ Zero barrier — install Ferris, get 100 free credits, start using AND earning i
 
 ## Pricing Engine
 
-### Dynamic Pricing
+### Current: Fixed Pricing (Phase 2)
 
-Prices adjust based on network supply and demand:
+Inference is priced at a fixed **50% of OpenRouter median** for equivalent models. This keeps pricing predictable for early adopters and simplifies settlement.
+
+- Platform routing fee: **15%** of the inference cost.
+- Node receives: **85%** of the inference cost.
+- Storage: **1 mc/KB** stored, 15% platform fee.
+- Availability reward: **10 mc/minute** while heartbeating.
+
+### Planned: Dynamic Pricing (Phase 3+)
+
+Once network utilization is measurable at scale, prices will adjust based on supply and demand:
 
 ```
 effective_price = base_price * demand_multiplier * quality_multiplier
 
 demand_multiplier:
-  - < 30% network utilization: 0.5x (cheap, lots of spare capacity)
+  - < 30% network utilization: 0.5x (spare capacity discount)
   - 30-70% utilization: 1.0x (normal)
-  - 70-90% utilization: 1.5x (getting busy)
+  - 70-90% utilization: 1.5x (busy)
   - > 90% utilization: 2.0x (surge, incentivizes more contributors)
 
 quality_multiplier:

@@ -11,7 +11,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use ferris_common::FerrisConfig;
 use ferris_crypto::Cipher;
-use ferris_inference::{ChatCompletionRequest, OllamaProxy};
+use ferris_inference::{ChatCompletionRequest, InferenceBackend, OllamaBackend};
 use ferris_memory::MemoryStore;
 use ferris_storage::ObjectStore;
 use ferris_tasks::TaskScheduler;
@@ -25,7 +25,7 @@ struct AppState {
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
-    inference: Arc<OllamaProxy>,
+    inference: Arc<dyn InferenceBackend>,
     agent_id: String,
 }
 
@@ -126,10 +126,23 @@ pub async fn run_server(
 
     // Start the background task executor
     let _task_executor = TaskScheduler::start_executor(pool, 60);
-    let inference = Arc::new(OllamaProxy::new(
+    let models_dir = std::path::PathBuf::from(&config.agent.data_dir).join("models");
+    let inference = ferris_inference::create_backend(
         &config.inference.ollama_url,
         config.inference.max_concurrent_requests,
-    ));
+        &models_dir,
+    )
+    .await;
+    let inference = match inference {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "inference backend init failed, falling back to Ollama proxy");
+            Arc::new(OllamaBackend::new(
+                &config.inference.ollama_url,
+                config.inference.max_concurrent_requests,
+            )?)
+        }
+    };
 
     let app = build_app(memory, storage, tasks, inference, agent_id);
 
@@ -152,7 +165,7 @@ pub fn build_app(
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
-    inference: Arc<OllamaProxy>,
+    inference: Arc<dyn InferenceBackend>,
     agent_id: &str,
 ) -> Router {
     let state = AppState { memory, storage, tasks, inference, agent_id: agent_id.into() };

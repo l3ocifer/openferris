@@ -158,15 +158,18 @@ async fn cmd_start(
     }
     let contribute_pct = config.network.contribute_percent;
 
-    // Step 2: Detect resources and Ollama
+    // Step 2: Detect resources and set up inference backend
     let full_resources = ferris_core::resources::detect();
     let contributed = full_resources.contributed(contribute_pct);
 
-    let ollama = ferris_inference::OllamaProxy::new(
+    let models_dir = data_dir.join("models");
+    let inference = ferris_inference::create_backend(
         &config.inference.ollama_url,
         config.inference.max_concurrent_requests,
-    );
-    let models: Vec<ferris_common::ModelInfo> = ollama.list_models().await.unwrap_or_default();
+        &models_dir,
+    )
+    .await?;
+    let models: Vec<ferris_common::ModelInfo> = inference.list_models().await.unwrap_or_default();
 
     println!();
     println!("Detected resources:");
@@ -179,9 +182,9 @@ async fn cmd_start(
     }
     if !models.is_empty() {
         let names: Vec<&str> = models.iter().map(|m| m.model_name.as_str()).collect();
-        println!("  ollama: {} models ({})", models.len(), names.join(", "));
+        println!("  inference: {} models ({})", models.len(), names.join(", "));
     } else {
-        println!("  ollama: not detected");
+        println!("  inference: no models detected");
     }
 
     println!();
@@ -204,7 +207,7 @@ async fn cmd_start(
     let cipher = ferris_crypto::Cipher::from_secret_key_bytes(&identity.signing_key.to_bytes());
 
     let client =
-        ferris_net::CoordinatorClient::new(&coordinator_url, &agent_id, identity.signing_key);
+        ferris_net::CoordinatorClient::new(&coordinator_url, &agent_id, identity.signing_key)?;
 
     let reg_req = ferris_common::RegisterRequest {
         agent_id: agent_id.clone(),
@@ -241,11 +244,9 @@ async fn cmd_start(
     let hb_models = models.clone();
     let hb_resources = contributed.clone();
     let hb_interval = config.network.heartbeat_interval_secs;
-    let hb_ollama_url = config.inference.ollama_url.clone();
-    let hb_max_concurrent = config.inference.max_concurrent_requests;
+    let hb_inference = inference.clone();
 
     if connected {
-        // Already registered — start heartbeat immediately
         let hb_agent_id = agent_id.clone();
         tokio::spawn(async move {
             heartbeat_loop(
@@ -254,13 +255,11 @@ async fn cmd_start(
                 hb_resources,
                 hb_models,
                 hb_interval,
-                hb_ollama_url,
-                hb_max_concurrent,
+                hb_inference,
             )
             .await;
         });
     } else {
-        // Not connected — retry registration in background, then start heartbeat
         let retry_client = client.clone();
         let retry_req = reg_req.clone();
         let retry_agent_id = agent_id.clone();
@@ -276,8 +275,7 @@ async fn cmd_start(
                             hb_resources,
                             hb_models,
                             hb_interval,
-                            hb_ollama_url,
-                            hb_max_concurrent,
+                            hb_inference,
                         )
                         .await;
                         break;
@@ -310,8 +308,7 @@ async fn heartbeat_loop(
     resources: ferris_common::ResourceManifest,
     models: Vec<ferris_common::ModelInfo>,
     interval_secs: u64,
-    ollama_url: String,
-    max_concurrent: u32,
+    inference: std::sync::Arc<dyn ferris_inference::InferenceBackend>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -319,14 +316,11 @@ async fn heartbeat_loop(
     loop {
         interval.tick().await;
 
-        let ollama = ferris_inference::OllamaProxy::new(&ollama_url, max_concurrent);
-        let current_load = ollama.current_load();
-
         let req = ferris_common::HeartbeatRequest {
             agent_id: agent_id.clone(),
             resources: resources.clone(),
             models: models.clone(),
-            current_requests: current_load,
+            current_requests: inference.current_load(),
         };
 
         match client.heartbeat(&req).await {
@@ -409,10 +403,13 @@ async fn cmd_serve(
             ));
             let tasks =
                 Arc::new(ferris_tasks::TaskScheduler::new(pool, config.tasks.max_scheduled));
-            let inference = Arc::new(ferris_inference::OllamaProxy::new(
+            let models_dir = data_dir.join("models");
+            let inference = ferris_inference::create_backend(
                 &config.inference.ollama_url,
                 config.inference.max_concurrent_requests,
-            ));
+                &models_dir,
+            )
+            .await?;
 
             ferris_mcp::serve_stdio(identity.agent_id, memory, storage, tasks, inference, None)
                 .await
@@ -460,21 +457,24 @@ async fn cmd_join(
     let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
     let agent_id = identity.agent_id.clone();
     let public_key = identity.public_key_bytes().to_vec();
-    let client = ferris_net::CoordinatorClient::new(url, &agent_id, identity.signing_key);
+    let client = ferris_net::CoordinatorClient::new(url, &agent_id, identity.signing_key)?;
 
     let resources = ferris_core::resources::detect().contributed(config.network.contribute_percent);
 
-    let ollama = ferris_inference::OllamaProxy::new(
+    let models_dir = data_dir.join("models");
+    let backend = ferris_inference::create_backend(
         &config.inference.ollama_url,
         config.inference.max_concurrent_requests,
-    );
-    let models = match ollama.list_models().await {
+        &models_dir,
+    )
+    .await?;
+    let models = match backend.list_models().await {
         Ok(m) => {
             println!("detected {} local models", m.len());
             m
         }
         Err(_) => {
-            println!("no Ollama instance detected (continuing without models)");
+            println!("no inference backend detected (continuing without models)");
             vec![]
         }
     };
@@ -519,7 +519,7 @@ async fn cmd_balance(data_dir: &Path, coordinator_url: Option<&str>) -> ferris_c
 
     let url = coordinator_url.unwrap_or(&config.network.coordinator_url);
     let client =
-        ferris_net::CoordinatorClient::new(url, &identity.agent_id, identity.signing_key.clone());
+        ferris_net::CoordinatorClient::new(url, &identity.agent_id, identity.signing_key.clone())?;
 
     let balance = client.get_balance().await?;
     let soft = balance.soft_balance_mc as f64 / 1000.0;
@@ -561,15 +561,19 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
         .await
         .unwrap_or(0);
 
-    let ollama = ferris_inference::OllamaProxy::new(
+    let models_dir = data_dir.join("models");
+    let backend = ferris_inference::create_backend(
         &config.inference.ollama_url,
         config.inference.max_concurrent_requests,
-    );
-    let ollama_status = if ollama.health_check().await.unwrap_or(false) {
-        let models = ollama.list_models().await.unwrap_or_default();
-        format!("running ({} models)", models.len())
-    } else {
-        "not detected".into()
+        &models_dir,
+    )
+    .await;
+    let inference_status = match &backend {
+        Ok(b) if b.health_check().await.unwrap_or(false) => {
+            let models = b.list_models().await.unwrap_or_default();
+            format!("running ({} models)", models.len())
+        }
+        _ => "not available".into(),
     };
 
     println!("OpenFerris Node Status");
@@ -587,7 +591,7 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
     if let Some(gpu) = &resources.gpu {
         println!("  gpu:          {} ({} MB)", gpu.name, gpu.vram_mb);
     }
-    println!("  ollama:       {ollama_status}");
+    println!("  inference:    {inference_status}");
     println!();
     println!("Data:");
     println!("  memories:     {mem_count}");

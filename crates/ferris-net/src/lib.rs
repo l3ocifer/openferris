@@ -23,18 +23,18 @@ pub struct CoordinatorClient {
 }
 
 impl CoordinatorClient {
-    pub fn new(base_url: &str, agent_id: &str, signing_key: SigningKey) -> Self {
+    pub fn new(base_url: &str, agent_id: &str, signing_key: SigningKey) -> Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
-            .expect("failed to build HTTP client");
+            .map_err(|e| FerrisError::Network(format!("failed to build HTTP client: {e}")))?;
 
-        Self {
+        Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             agent_id: agent_id.into(),
             signing_key: Arc::new(signing_key),
             http,
-        }
+        })
     }
 
     /// Sign a JSON payload with Ed25519 and return the base64-encoded signature.
@@ -179,7 +179,8 @@ mod tests {
         let signing_key = SigningKey::generate(&mut rand_core::OsRng);
         let verifying_key: VerifyingKey = signing_key.verifying_key();
 
-        let client = CoordinatorClient::new("http://localhost:9999", "test-agent", signing_key);
+        let client =
+            CoordinatorClient::new("http://localhost:9999", "test-agent", signing_key).unwrap();
 
         let payload = b"hello, ferris!";
         let sig_b64 = client.sign_payload_for_test(payload);

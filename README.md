@@ -4,7 +4,7 @@
 
 > OpenRouter aggregates cloud LLM providers behind one API. OpenFerris aggregates local compute — Ollama instances, idle GPUs, spare storage, CPU cycles — behind one API. We don't run any models. We just route. Same playbook, but for everything agents need, not just inference.
 
-**Status:** v0.1.0-alpha — Local agent fully functional. Network inference routing (with SSE streaming and retry/fallback) and distributed storage operational via coordinator. Credit economy active. 12 MCP tools. Agent messaging and distributed compute planned.
+**Status:** v0.1.0 — Local agent fully functional. Network inference routing (with SSE streaming and retry/fallback), embedding routing, distributed storage, and agent-to-agent messaging operational via coordinator. Credit economy with settlement endpoint active. 12 MCP tools. 89 tests. Docker images (Ubuntu 24.04) with full semantic search. Embedded inference via candle (pure Rust) with auto-model provisioning — no Ollama required. Mobile-ready architecture.
 
 **Website:** openferris.com
 **License:** MIT / Apache 2.0
@@ -25,7 +25,7 @@ But we're bigger than OpenRouter. They only route inference. We route:
 
 | Resource | What it means |
 |----------|--------------|
-| **Inference** | Ollama/vLLM instances across the network. The "OpenRouter" part. |
+| **Inference** | Embedded candle + Ollama/vLLM instances across the network. The "OpenRouter" part. |
 | **Memory** | Persistent key-value + semantic search. Agents remember across sessions. |
 | **Storage** | S3-compatible object store backed by spare disks across the network. |
 | **Compute** | CPU batch jobs, data processing, scheduled tasks. |
@@ -74,7 +74,7 @@ ferris start
 ```
 
 That's it. Your machine is now:
-1. **An inference node** — earning credits when other agents route inference to your Ollama (working now)
+1. **An inference node** — earning credits when other agents route inference to your local backend (Ollama or embedded candle) (working now)
 2. **A storage node** — earning credits when other agents store files on your disk via the coordinator (working now)
 3. A compute node — earning credits for CPU time (planned)
 4. A full agent with memory, storage, scheduling, and directory access (working now, local-only)
@@ -118,7 +118,7 @@ Machine B earns 0.08 credits. Agent A's balance debited 0.08 credits.
 Platform keeps 15% routing fee.
 ```
 
-Inference routing is live with retry/fallback (top 3 candidates), reputation penalties on failure (-1.0), and reputation boost on success (+0.1). Network storage works the same way — Agent A stores a file via the coordinator, which routes it to Agent B's disk and settles credits at 1mc/KB with 15% platform fee. Distributed compute and agent-to-agent messaging are planned.
+Inference routing is live with retry/fallback (top 3 candidates), reputation penalties on failure (-1.0), and reputation boost on success (+0.1). Network storage works the same way — Agent A stores a file via the coordinator, which routes it to Agent B's disk and settles credits at 1mc/KB with 15% platform fee. Embedding requests (`/v1/embeddings`) are routed the same way. Agent-to-agent messaging is live with 24-hour message queuing. Nodes can report token usage via the `/api/v1/settle` endpoint for independent settlement.
 
 ### The Credit Economy
 
@@ -239,7 +239,7 @@ See [`docs/mobile-supply.md`](docs/mobile-supply.md) for the phone supply thesis
 | Object Storage | Local FS + Cloudflare R2 | Local-first; R2 backs network storage (Phase 1-3) |
 | Embeddings | fastembed (AllMiniLM-L6-V2) | Local 384-dim embeddings via ONNX, no API calls |
 | Task Engine | Tokio + croner | Async cron scheduler with background execution loop |
-| Inference Bridge | Ollama/vLLM auto-detection | Detect local inference, register as network provider |
+| Inference Bridge | Candle (embedded) + Ollama auto-detect | Embedded GGUF inference (pure Rust), Ollama fallback. Auto-downloads model if needed. |
 | Networking | libp2p or QUIC | P2P communication, NAT traversal |
 | Crypto (Phase 4) | Alloy + Base L2 | USDC wallets for optional cashout |
 

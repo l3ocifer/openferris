@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 // ── Types ───────────────────────────────────────────────────────────────
 
+/// A recorded credit transaction (inference, storage, availability, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub tx_id: String,
@@ -24,6 +25,7 @@ pub struct Transaction {
     pub status: String,
 }
 
+/// Credits held in escrow pending job completion or expiration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowEntry {
     pub escrow_id: String,
@@ -38,15 +40,18 @@ pub struct EscrowEntry {
 
 // ── Credit Ledger ───────────────────────────────────────────────────────
 
+/// SQLite-backed credit ledger managing balances, settlements, and escrow.
 pub struct CreditLedger {
     pool: SqlitePool,
 }
 
 impl CreditLedger {
+    /// Create a new credit ledger using the given database pool.
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
 
+    /// Access the underlying connection pool.
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }

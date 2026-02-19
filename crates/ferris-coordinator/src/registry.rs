@@ -9,20 +9,24 @@ use tracing::{info, warn};
 
 // ── Agent Registry ──────────────────────────────────────────────────────
 
+/// Manages agent registration, heartbeats, reputation, and availability rewards.
 pub struct AgentRegistry {
     pool: SqlitePool,
     ledger: CreditLedger,
 }
 
 impl AgentRegistry {
+    /// Create a new registry backed by the given database pool and credit ledger.
     pub fn new(pool: SqlitePool, ledger: CreditLedger) -> Self {
         Self { pool, ledger }
     }
 
+    /// Access the underlying connection pool.
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
+    /// Access the credit ledger for balance and settlement operations.
     pub fn ledger(&self) -> &CreditLedger {
         &self.ledger
     }

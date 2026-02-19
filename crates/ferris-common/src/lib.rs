@@ -3,6 +3,7 @@ use thiserror::Error;
 
 // ── Errors ──────────────────────────────────────────────────────────────
 
+/// Unified error type for all OpenFerris subsystems.
 #[derive(Debug, Error)]
 pub enum FerrisError {
     #[error("config error: {0}")]
@@ -42,10 +43,12 @@ pub enum FerrisError {
     InvalidInput(String),
 }
 
+/// Convenience alias for `Result<T, FerrisError>`.
 pub type Result<T> = std::result::Result<T, FerrisError>;
 
 // ── Config ──────────────────────────────────────────────────────────────
 
+/// Top-level configuration for a Ferris agent node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FerrisConfig {
     pub agent: AgentConfig,
@@ -59,33 +62,39 @@ pub struct FerrisConfig {
     pub inference: InferenceConfig,
 }
 
+/// Agent identity and data directory settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub name: String,
     pub data_dir: String,
 }
 
+/// MCP transport and port settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpConfig {
     pub transport: String,
     pub port: u16,
 }
 
+/// Memory subsystem capacity limits.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryConfig {
     pub max_entries: u32,
 }
 
+/// Object storage capacity limits.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     pub max_mb: u64,
 }
 
+/// Task scheduler capacity limits.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TasksConfig {
     pub max_scheduled: u32,
 }
 
+/// Coordinator network and resource contribution settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub coordinator_url: String,
@@ -115,6 +124,7 @@ impl Default for NetworkConfig {
     }
 }
 
+/// Local Ollama inference endpoint settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InferenceConfig {
     pub ollama_url: String,
@@ -143,6 +153,7 @@ impl Default for FerrisConfig {
 
 // ── Types ───────────────────────────────────────────────────────────────
 
+/// Hardware resources available on an agent node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceManifest {
     pub cpu_cores: u16,
@@ -151,6 +162,7 @@ pub struct ResourceManifest {
     pub gpu: Option<GpuInfo>,
 }
 
+/// GPU device name and VRAM capacity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuInfo {
     pub name: String,
@@ -187,6 +199,7 @@ pub struct RegisterRequest {
     pub region: Option<String>,
 }
 
+/// Coordinator response to a registration request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterResponse {
     pub accepted: bool,
@@ -203,6 +216,7 @@ pub struct HeartbeatRequest {
     pub current_requests: u32,
 }
 
+/// Coordinator response to a heartbeat, including queued messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatResponse {
     pub status: String,
@@ -242,16 +256,67 @@ pub struct SettlementReport {
     pub duration_ms: u64,
 }
 
+/// Embedding request (OpenAI-compatible).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingRequest {
+    pub model: String,
+    pub input: EmbeddingInput,
+}
+
+/// Embedding input — single string or batch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    Single(String),
+    Batch(Vec<String>),
+}
+
+/// Settlement request from a node reporting completed inference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementRequest {
+    pub job_id: String,
+    pub consumer_agent: String,
+    pub model_name: String,
+    pub tokens_in: u32,
+    pub tokens_out: u32,
+    pub duration_ms: u64,
+}
+
+/// Agent-to-agent message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMessage {
+    pub message_id: String,
+    pub from_agent: String,
+    pub to_agent: String,
+    pub payload: serde_json::Value,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub delivered_at: Option<i64>,
+}
+
+/// Request to send an agent-to-agent message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendMessageRequest {
+    pub to_agent: String,
+    pub payload: serde_json::Value,
+}
+
 // ── Constants ───────────────────────────────────────────────────────────
 
+/// Platform fee taken from each settlement, as a percentage.
 pub const PLATFORM_FEE_PERCENT: u32 = 15;
+/// Signup bonus awarded to new agents (in millicredits).
 pub const SIGNUP_BONUS_MC: i64 = 100_000; // 100 credits in millicredits
+/// Seconds without a heartbeat before marking an agent degraded.
 pub const HEARTBEAT_TIMEOUT_SECS: i64 = 90;
+/// Seconds without a heartbeat before evicting an agent.
 pub const EVICTION_TIMEOUT_SECS: i64 = 300;
+/// Initial reputation score for newly registered agents.
 pub const DEFAULT_REPUTATION: f64 = 50.0;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+/// Current time as seconds since the Unix epoch.
 pub fn unix_timestamp() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -262,6 +262,70 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] Documentation aligned with actual implementation (API paths, MCP tools, fee %)
 - [x] docker-compose.yml for local node + coordinator testing
 
+## 15) Docker & Documentation Hardening — COMPLETE
+
+- [x] Docker base images switched to Ubuntu 24.04 (glibc 2.39) — enables full semantic search (fastembed/ONNX) in containers
+- [x] All `expect()` calls in production code replaced with proper `Result` error handling (coordinator main, OllamaProxy::new, CoordinatorClient::new)
+- [x] architecture.md routing algorithm corrected to match spec-v1.md and implementation (reputation 0.40, speed 0.25, latency 0.20, availability 0.15, hot bonus 0.10)
+- [x] economy.md pricing section corrected: fixed pricing (50% of OpenRouter median) in Phase 2, dynamic pricing marked as Phase 3+
+- [x] README.md version updated from v0.1.0-alpha to v0.1.0
+- [x] justfile added for common development tasks (build, test, lint, fmt, docker)
+- [x] All 65 tests passing, clippy clean, cargo check clean
+
+## 16) Feature Completeness & Test Coverage — COMPLETE
+
+- [x] `POST /v1/embeddings` endpoint: OpenAI-compatible embedding routing with retry/fallback
+- [x] `POST /api/v1/settle` endpoint: node-reported settlement with signed auth
+- [x] `POST /api/v1/messages/send` endpoint: agent-to-agent messaging with 24hr TTL
+- [x] `GET /api/v1/messages` endpoint: poll and deliver queued messages
+- [x] `message_queue` migration (coordinator 0003)
+- [x] Tests for MCP server construction and capabilities
+- [x] Tests for config loading, identity generation/persistence
+- [x] Tests for settlement and messaging endpoints (coordinator integration)
+- [x] Doc comments on all public types and functions across all crates
+- [x] architecture.md updated: all endpoints now marked as implemented
+- [x] 80+ tests passing, clippy clean, fmt clean
+
+## 17) Embedded Inference Backend — COMPLETE
+
+### InferenceBackend Trait Abstraction
+- [x] `InferenceBackend` async trait with `health_check`, `list_models`, `chat_completion`, `current_load`
+- [x] `OllamaProxy` renamed to `OllamaBackend`, implements trait
+- [x] All callers refactored: `server.rs`, `main.rs`, `ferris-mcp/lib.rs`, test files use `Arc<dyn InferenceBackend>`
+
+### CandleBackend (Embedded Inference)
+- [x] Pure-Rust inference via `candle-core` + `candle-transformers`
+- [x] GGUF quantized model loading (Qwen2.5 ChatML format)
+- [x] Auto-regressive token generation with temperature + top-p sampling
+- [x] Concurrency limiting with atomic counter + RAII guard
+- [x] Tokenizer auto-download from HuggingFace Hub
+
+### Model Manager
+- [x] RAM-based model recommendation (0.5B / 1.5B / 3B based on system memory)
+- [x] Auto-download from HuggingFace Hub via `hf-hub` async API
+- [x] Local model discovery (scan for `.gguf` files)
+- [x] Tests for recommendation, local discovery, empty/missing directories
+
+### Auto-Detection
+- [x] `create_backend()` probes Ollama health first, falls back to CandleBackend
+- [x] `ferris start` uses auto-detection for all inference
+- [x] `ferris serve`, `ferris join`, `ferris status` updated
+- [x] Heartbeat loop uses shared `Arc<dyn InferenceBackend>` (no re-creation)
+
+### Feature Flags
+- [x] `ollama` — Ollama proxy backend
+- [x] `candle-backend` — embedded candle inference (optional deps: candle-core, candle-transformers, tokenizers, hf-hub)
+- [x] `mobile` — candle-only, no Ollama or fastembed
+- [x] Default features: `["ollama", "candle-backend"]`
+
+### Tests
+- [x] 89 tests passing
+- [x] Trait object construction test
+- [x] Ollama health check returns false when offline
+- [x] `create_backend` fallback behavior
+- [x] ChatML prompt formatting test
+- [x] Model manager recommendation + local discovery tests
+
 ## 12) Production Infrastructure — COMPLETE
 
 ### Coordinator Hosting

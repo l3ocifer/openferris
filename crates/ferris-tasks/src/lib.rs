@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 // ── Data types ─────────────────────────────────────────────────────────────
 
+/// A scheduled task with a cron expression and action payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub task_id: String,
@@ -16,6 +17,7 @@ pub struct Task {
     pub last_run_at: Option<i64>,
 }
 
+/// Record of a single task execution with timing and result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskRun {
     pub id: String,
@@ -27,6 +29,7 @@ pub struct TaskRun {
 
 // ── Action types ───────────────────────────────────────────────────────────
 
+/// Action to execute when a task fires (log, HTTP call, or webhook).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskAction {
@@ -36,6 +39,7 @@ pub enum TaskAction {
 }
 
 impl TaskAction {
+    /// Deserialize a JSON string into a `TaskAction`.
     pub fn parse(action_str: &str) -> std::result::Result<Self, serde_json::Error> {
         serde_json::from_str(action_str)
     }
@@ -43,12 +47,14 @@ impl TaskAction {
 
 // ── TaskScheduler ──────────────────────────────────────────────────────────
 
+/// Cron-based task scheduler backed by SQLite.
 pub struct TaskScheduler {
     pool: SqlitePool,
     max_scheduled: u32,
 }
 
 impl TaskScheduler {
+    /// Create a new scheduler with the given capacity limit.
     pub fn new(pool: SqlitePool, max_scheduled: u32) -> Self {
         Self { pool, max_scheduled }
     }

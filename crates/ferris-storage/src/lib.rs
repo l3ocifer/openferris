@@ -8,6 +8,7 @@ use uuid::Uuid;
 #[cfg(feature = "encryption")]
 use ferris_crypto::Cipher;
 
+/// Metadata for a stored file (id, name, size, hash, timestamp).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
     pub file_id: String,
@@ -17,6 +18,7 @@ pub struct FileInfo {
     pub created_at: i64,
 }
 
+/// Content-addressed object store backed by SQLite metadata and filesystem blobs.
 pub struct ObjectStore {
     pool: SqlitePool,
     objects_dir: PathBuf,
@@ -26,6 +28,7 @@ pub struct ObjectStore {
 }
 
 impl ObjectStore {
+    /// Create a new object store with the given storage directory and capacity limit.
     pub fn new(pool: SqlitePool, objects_dir: PathBuf, max_mb: u64) -> Self {
         Self {
             pool,

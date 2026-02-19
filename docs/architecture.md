@@ -245,7 +245,7 @@ Consumer                    Coordinator                  Node A
    │  SSE: data: [DONE]         │<─────────────────────────│
    │ <──────────────────────────│                          │
    │                            │                          │
-   │                            │  POST /settle (Planned)  │
+   │                            │  POST /api/v1/settle     │
    │                            │  {input:500, output:200} │
    │                            │<─────────────────────────│
    │                            │                          │
@@ -284,7 +284,7 @@ Consumer                    Coordinator                  Node A
    │  SSE: direct stream        │                          │
    │ <─────────────────────────────────────────────────────│
    │                            │                          │
-   │                            │  POST /settle (Planned)  │
+   │                            │  POST /api/v1/settle     │
    │                            │<─────────────────────────│
    │                            │                          │
 ```
@@ -294,14 +294,14 @@ Consumer                    Coordinator                  Node A
 ### Routing Algorithm
 
 ```
-score = w1 * hot_model_match      # 0.40 — model loaded in VRAM
-      + w2 * installed_model_match # 0.15 — model on disk (needs load)
-      + w3 * (1 / latency_ms)     # 0.20 — network proximity
-      + w4 * idle_capacity         # 0.15 — available VRAM headroom
-      + w5 * reputation            # 0.10 — historical reliability
+score = reputation_norm  * 0.40   # (reputation / 100) — historical reliability
+      + speed_norm       * 0.25   # (tokens_per_sec / 100) — throughput
+      + latency_norm     * 0.20   # same region = 1.0, cross-region = 0.5, unknown = 0.7
+      + availability     * 0.15   # (1 - current_load)
+      + hot_bonus                 # model loaded in VRAM → +0.10, else 0
 ```
 
-**Hot model priority:** A node with the model already loaded in VRAM scores 0.40 on the most heavily weighted factor. A node that has the model installed but not loaded scores 0.15 and must cold-start. This is the single most impactful routing decision.
+**Reputation-first:** Reliability is the heaviest factor because unreliable routes waste latency on retries. A node with full reputation, fast inference, same-region latency, zero load, and a hot model scores 1.10. The hot bonus is a tie-breaker that avoids cold-start overhead.
 
 ---
 
@@ -878,28 +878,47 @@ pub trait CoordinatorApi: Send + Sync {
 
 ### ferris-inference
 
-Local inference proxy. Wraps Ollama/vLLM. Meters token usage.
+Unified inference backend with embedded (candle) and Ollama support. Auto-detects the best available backend at startup.
 
 | Item | Description |
 |------|-------------|
-| `InferenceProxy` | Proxies requests to local Ollama or vLLM |
-| `TokenMeter` | Counts input/output tokens from the SSE stream |
-| `ModelRegistry` | Tracks hot models (VRAM) vs installed models (disk) |
-| `OllamaClient` | Typed client for Ollama HTTP API |
-| `VllmClient` | Typed client for vLLM OpenAI-compat API |
+| `InferenceBackend` | Trait: `health_check`, `list_models`, `chat_completion`, `current_load` |
+| `OllamaBackend` | Proxies requests to a local Ollama daemon (optional) |
+| `CandleBackend` | Pure-Rust embedded inference via candle + quantized GGUF models |
+| `ModelManager` | RAM-based model selection and auto-download from HuggingFace Hub |
+| `create_backend()` | Auto-detect: Ollama running → use it, else → candle with auto-download |
 
 **Key trait:**
 
 ```rust
+#[async_trait]
 pub trait InferenceBackend: Send + Sync {
-    async fn infer(&self, req: InferenceRequest) -> Result<SseStream>;
+    async fn health_check(&self) -> Result<bool>;
     async fn list_models(&self) -> Result<Vec<ModelInfo>>;
-    async fn hot_models(&self) -> Result<Vec<ModelInfo>>;
-    async fn health(&self) -> Result<BackendHealth>;
+    async fn chat_completion(&self, agent_id: &str, req: &ChatCompletionRequest) -> Result<InferenceResult>;
+    fn current_load(&self) -> u32;
 }
 ```
 
-**Key crates:** `reqwest`, `async-stream`, `tiktoken-rs` (fallback counting)
+**Default model selection (auto-download):**
+
+| Device | RAM | Model | Size |
+|--------|-----|-------|------|
+| Phone (4GB) | 2-3GB free | Qwen2.5-0.5B-Q4_K_M | ~400MB |
+| Phone (6-8GB) | 4-6GB free | Qwen2.5-1.5B-Q4_K_M | ~1GB |
+| Desktop (16GB+) | 8GB+ free | Qwen2.5-3B-Q4_K_M | ~2GB |
+
+**Feature flags:**
+
+```toml
+[features]
+default = ["ollama", "candle-backend"]
+ollama = []                              # Ollama proxy (desktop convenience)
+candle-backend = ["candle-core", ...]    # Embedded GGUF inference
+mobile = ["candle-backend"]              # No ollama, no fastembed
+```
+
+**Key crates:** `candle-core`, `candle-transformers`, `tokenizers`, `hf-hub`, `reqwest`, `async-trait`
 
 ### ferris-credits
 
@@ -955,10 +974,10 @@ The coordinator binary. Axum HTTP server. BUSL-1.1 licensed.
 | `POST` | `/api/v1/network/store` | Store file on network node (signed) |
 | `GET`  | `/api/v1/network/files` | List agent's network files (signed) |
 | `GET`  | `/api/v1/network/files/{object_id}` | Retrieve file from network (signed) |
-| `POST` | `/v1/embeddings` | Embedding requests (Planned) |
-| `GET`  | `/agents/messages` | Long-poll for queued messages (Planned) |
-| `POST` | `/directory/message` | Agent-to-agent message, queued 24hr (Planned) |
-| `POST` | `/settle` | Internal: node reports token usage (Planned) |
+| `POST` | `/v1/embeddings` | Embedding requests routed to nodes |
+| `GET`  | `/api/v1/messages` | Poll queued agent-to-agent messages |
+| `POST` | `/api/v1/messages/send` | Send agent-to-agent message, 24hr TTL |
+| `POST` | `/api/v1/settle` | Node reports token usage for settlement |
 
 **Key crates:** `axum`, `tower`, `sqlx`, `tokio`
 
@@ -1118,7 +1137,7 @@ The coordinator exposes an OpenAI-compatible API. One endpoint, many demand sour
 | Endpoint | Compatible With | Notes |
 |----------|----------------|-------|
 | `POST /v1/chat/completions` | OpenRouter, LiteLLM, Vercel AI SDK, any OpenAI client | SSE streaming, function calling |
-| `POST /v1/embeddings` | LangChain, LlamaIndex, any embeddings consumer | Planned — routed to nodes with embedding models |
+| `POST /v1/embeddings` | LangChain, LlamaIndex, any embeddings consumer | Routed to nodes with embedding models |
 | `GET /v1/models` | Standard model listing | Returns union of all available models across nodes |
 
 **External provider registrations:**
@@ -1280,7 +1299,7 @@ Explicit non-goals to prevent scope creep:
 | **Blockchain / on-chain settlement** | Regulatory minefield. Engineering complexity. Users don't care. | SQLite double-entry ledger on coordinator. Fast, simple, auditable. |
 | **TEE / SGX enclaves** | Requires specific hardware. Complex attestation. Marginal security gain for our trust model. | TOS + reputation + Ollama sandboxing. Transparent about the tradeoffs. |
 | **Full S3 API** | Massive surface area. 100+ operations. | Content-addressed object store with `put`/`get`/`list`/`delete`. R2 for S3 compat. |
-| **Custom inference engine** | Ollama and vLLM are excellent. Years of optimization. | Proxy to Ollama/vLLM. Add metering and routing on top. |
+| **Custom inference engine from scratch** | candle and Ollama exist. We don't write our own transformer runtime. | Embedded inference via candle (pure Rust, GGUF models). Ollama as optional desktop accelerator. |
 | **Multi-region coordinator** | Premature. Single EC2 t3.medium handles thousands of nodes. | Single coordinator with SQLite. Shard when we need to (10k+ nodes). |
 | **Real-time memory sync across nodes** | Distributed consensus is hard. CAP theorem. | Memories are local to each agent. That's a feature, not a bug. Agents own their memories. |
 | **Custom container runtime** | Docker/OCI exists. Not our problem. | Ollama handles model isolation. `ferris` is a userspace binary. |

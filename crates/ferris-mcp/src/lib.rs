@@ -3,7 +3,7 @@ use std::sync::Arc;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use ferris_common::FerrisError;
-use ferris_inference::OllamaProxy;
+use ferris_inference::InferenceBackend;
 use ferris_memory::MemoryStore;
 use ferris_net::CoordinatorClient;
 use ferris_storage::ObjectStore;
@@ -90,13 +90,14 @@ struct InferParams {
 
 // ── MCP Server ──────────────────────────────────────────────────────────
 
+/// MCP server exposing memory, storage, tasks, and inference tools over stdio.
 #[derive(Clone)]
 pub struct FerrisMcpServer {
     agent_id: String,
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
-    inference: Arc<OllamaProxy>,
+    inference: Arc<dyn InferenceBackend>,
     coordinator: Option<Arc<CoordinatorClient>>,
     tool_router: ToolRouter<Self>,
 }
@@ -108,7 +109,7 @@ impl FerrisMcpServer {
         memory: Arc<MemoryStore>,
         storage: Arc<ObjectStore>,
         tasks: Arc<TaskScheduler>,
-        inference: Arc<OllamaProxy>,
+        inference: Arc<dyn InferenceBackend>,
         coordinator: Option<Arc<CoordinatorClient>>,
     ) -> Self {
         Self {
@@ -373,7 +374,7 @@ pub async fn serve_stdio(
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
-    inference: Arc<OllamaProxy>,
+    inference: Arc<dyn InferenceBackend>,
     coordinator: Option<Arc<CoordinatorClient>>,
 ) -> ferris_common::Result<()> {
     let server = FerrisMcpServer::new(agent_id, memory, storage, tasks, inference, coordinator);

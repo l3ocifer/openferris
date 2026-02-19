@@ -46,18 +46,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP `infer` tool:** run inference via local Ollama directly from any MCP client.
 - **MCP `balance` tool:** query coordinator credit balance from MCP.
 - **docker-compose.yml:** local development setup with coordinator + node services.
+- **Docker Ubuntu 24.04:** switched Docker base images from Debian bookworm to Ubuntu 24.04
+  (glibc 2.39) so ONNX Runtime / fastembed (semantic search) works inside containers.
+- **justfile:** common development tasks (build, test, lint, fmt, docker, ci).
+- **`POST /v1/embeddings`:** OpenAI-compatible embedding requests routed to nodes, with
+  retry/fallback and credit settlement.
+- **`POST /api/v1/settle`:** node-reported settlement endpoint. Nodes can report
+  token usage after serving inference, with signed auth and credit settlement.
+- **Agent-to-agent messaging:** `POST /api/v1/messages/send` queues JSON messages with
+  24-hour TTL. `GET /api/v1/messages` polls and delivers queued messages.
+- **`message_queue` migration:** new coordinator table for agent messaging.
+- **Tests:** 89 tests across all crates. Added tests for MCP server, config, identity,
+  settlement, messaging endpoints, inference backend trait, model manager, and candle prompt formatting.
+- **Doc comments:** comprehensive `///` documentation on all public types and functions.
+- **Embedded inference backend (candle):** pure-Rust inference via `candle-core` and
+  `candle-transformers`. Loads quantized GGUF models (Qwen2.5 family). No external daemon
+  required — works on desktop and mobile.
+- **`InferenceBackend` trait:** unified async trait for all inference backends. `OllamaBackend`
+  (renamed from `OllamaProxy`) and `CandleBackend` both implement it. All callers use
+  `Arc<dyn InferenceBackend>`.
+- **Model auto-download:** RAM-based model selection (0.5B for phones, 1.5B for mid-range,
+  3B for desktops). Auto-downloads from HuggingFace Hub to `~/.ferris/models/`.
+- **`create_backend()` auto-detection:** `ferris start` probes Ollama first; if unavailable,
+  falls back to embedded candle backend with automatic model provisioning.
+- **Feature flags:** `ollama`, `candle-backend`, `mobile` Cargo features. `mobile` flag
+  excludes Ollama and fastembed for lean mobile builds.
 
 ### Changed
 - Coordinator URL updated from `api.openferris.dev` to `api.openferris.com`.
 - MCP tools expanded from 10 to 12 (`infer`, `balance` added).
 - CI uses `--locked` on all cargo commands for deterministic builds.
 - Documentation aligned with implementation: corrected API paths, MCP tool list, fee percentages.
+- architecture.md routing algorithm corrected to match spec-v1.md (reputation-first scoring).
+- economy.md pricing clarified: fixed pricing in Phase 2, dynamic pricing planned for Phase 3+.
+- `OllamaProxy` renamed to `OllamaBackend` and refactored to implement `InferenceBackend` trait.
+- All inference callers (`server.rs`, `main.rs`, `lib.rs` in ferris-mcp) updated to use
+  `Arc<dyn InferenceBackend>` instead of concrete `OllamaProxy`.
+- Heartbeat loop uses shared `Arc<dyn InferenceBackend>` instead of re-creating clients.
+- `ferris start`, `ferris serve`, `ferris join`, `ferris status` all use `create_backend()`
+  for automatic Ollama-vs-candle detection.
 
 ### Fixed
 - `rand`/`rand_core` dependency conflict with `fastembed` resolved by pinning `rand_core = "0.6"`.
 - Windows panic on `dirs::home_dir()` replaced with graceful fallback.
 - Production `unwrap()` calls in coordinator response builder, storage path handling, and
   memory mutex replaced with proper error handling.
+- All remaining `expect()` calls in production code (coordinator main, OllamaProxy::new,
+  CoordinatorClient::new) replaced with `Result`-based error handling.
 
 ## [0.1.0] - 2026-02-17
 

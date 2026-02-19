@@ -6,7 +6,9 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use ferris_common::{HeartbeatRequest, RegisterRequest};
+use ferris_common::{
+    AgentMessage, HeartbeatRequest, RegisterRequest, SendMessageRequest, SettlementRequest,
+};
 use ferris_inference::{ChatCompletionRequest, ChatCompletionResponse};
 use serde::Serialize;
 use tower::limit::ConcurrencyLimitLayer;
@@ -19,6 +21,7 @@ use crate::storage_router::StorageRouter;
 
 // ── State ───────────────────────────────────────────────────────────────
 
+/// Shared application state for the coordinator HTTP server.
 #[derive(Clone)]
 pub struct AppState {
     pub registry: Arc<AgentRegistry>,
@@ -37,6 +40,7 @@ struct CoordinatorStatus {
 
 // ── Router ──────────────────────────────────────────────────────────────
 
+/// Build the Axum router with all coordinator API routes and middleware.
 pub fn build_coordinator_app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -52,11 +56,16 @@ pub fn build_coordinator_app(state: AppState) -> Router {
         .route("/api/v1/network/store", post(network_store))
         .route("/api/v1/network/files", get(network_list_files))
         .route("/api/v1/network/files/{object_id}", get(network_retrieve))
+        .route("/api/v1/settle", post(settle))
+        .route("/v1/embeddings", post(embeddings))
+        .route("/api/v1/messages", get(poll_messages))
+        .route("/api/v1/messages/send", post(send_message))
         .layer(ConcurrencyLimitLayer::new(256))
         .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024)) // 10MB
         .with_state(state)
 }
 
+/// Start the coordinator HTTP server on the given host and port.
 pub async fn run_coordinator(state: AppState, host: &str, port: u16) -> ferris_common::Result<()> {
     let app = build_coordinator_app(state);
 
@@ -589,6 +598,361 @@ async fn dashboard_stats(State(s): State<AppState>) -> impl IntoResponse {
     (StatusCode::OK, Json(stats)).into_response()
 }
 
+// ── Settlement ──────────────────────────────────────────────────────────
+
+async fn settle(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let agent_id = match headers.get("X-Agent-Id").and_then(|v| v.to_str().ok()) {
+        Some(id) => id.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "X-Agent-Id header required").into_response(),
+    };
+    let signature = match headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        Some(s) => s.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "X-Signature header required").into_response(),
+    };
+
+    if let Err(e) = verify_agent_signature(s.registry.pool(), &agent_id, &signature, &body).await {
+        return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+    }
+
+    let req: SettlementRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    let total_tokens = req.tokens_in + req.tokens_out;
+    let amount_mc = total_tokens as i64;
+
+    match s
+        .registry
+        .ledger()
+        .settle_inference(
+            &req.consumer_agent,
+            &agent_id,
+            amount_mc,
+            &req.model_name,
+            req.tokens_in,
+            req.tokens_out,
+            &req.job_id,
+        )
+        .await
+    {
+        Ok(tx) => {
+            if let Err(e) = s.registry.adjust_reputation(&agent_id, 0.1).await {
+                tracing::warn!(error = %e, "reputation adjustment failed");
+            }
+
+            tracing::info!(
+                job_id = %req.job_id,
+                tx_id = %tx.tx_id,
+                model = %req.model_name,
+                consumer = %req.consumer_agent,
+                provider = %agent_id,
+                amount_mc,
+                fee_mc = tx.platform_fee_mc,
+                "node-reported settlement"
+            );
+
+            let response = serde_json::json!({
+                "settled": true,
+                "tx_id": tx.tx_id,
+                "amount_mc": amount_mc,
+                "platform_fee_mc": tx.platform_fee_mc,
+            });
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(ferris_common::FerrisError::InsufficientCredits(msg)) => {
+            (StatusCode::PAYMENT_REQUIRED, msg).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// ── Embeddings ──────────────────────────────────────────────────────────
+
+async fn embeddings(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let consumer_id = headers.get("X-Agent-Id").and_then(|v| v.to_str().ok()).map(String::from);
+
+    if let Some(agent_id) = &consumer_id {
+        if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+            if let Err(e) = verify_agent_signature(s.registry.pool(), agent_id, sig, &body).await {
+                return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+            }
+        }
+    }
+
+    let req: ferris_common::EmbeddingRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    let candidates = match s.router.score_candidates(&req.model, None).await {
+        Ok(c) if c.is_empty() => {
+            return (StatusCode::NOT_FOUND, format!("no provider for model: {}", req.model))
+                .into_response();
+        }
+        Ok(c) => c,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap_or_default();
+
+    let max_attempts = candidates.len().min(3);
+    for (attempt, candidate) in candidates.into_iter().take(max_attempts).enumerate() {
+        let proxy_result = client
+            .post(format!("{}/v1/embeddings", candidate.endpoint_url))
+            .json(&req)
+            .send()
+            .await;
+
+        let resp = match proxy_result {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                let status = r.status();
+                let text = r.text().await.unwrap_or_default();
+                tracing::warn!(
+                    provider = %candidate.agent_id,
+                    attempt = attempt + 1,
+                    "embedding provider error ({status}): {text}"
+                );
+                if let Err(e) = s.registry.adjust_reputation(&candidate.agent_id, -1.0).await {
+                    tracing::warn!(error = %e, "reputation penalty failed");
+                }
+                continue;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    provider = %candidate.agent_id,
+                    attempt = attempt + 1,
+                    "embedding provider unreachable: {e}"
+                );
+                if let Err(e) = s.registry.adjust_reputation(&candidate.agent_id, -1.0).await {
+                    tracing::warn!(error = %e, "reputation penalty failed");
+                }
+                continue;
+            }
+        };
+
+        let response_body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    provider = %candidate.agent_id,
+                    attempt = attempt + 1,
+                    "embedding parse error: {e}"
+                );
+                continue;
+            }
+        };
+
+        if let Some(consumer) = &consumer_id {
+            let input_count = match &req.input {
+                ferris_common::EmbeddingInput::Single(_) => 1u32,
+                ferris_common::EmbeddingInput::Batch(v) => v.len() as u32,
+            };
+            let amount_mc = input_count as i64;
+            let job_id = uuid::Uuid::now_v7().to_string();
+            if let Err(e) = s
+                .registry
+                .ledger()
+                .settle_inference(
+                    consumer,
+                    &candidate.agent_id,
+                    amount_mc,
+                    &req.model,
+                    input_count,
+                    0,
+                    &job_id,
+                )
+                .await
+            {
+                tracing::warn!(error = %e, "embedding settlement failed");
+            }
+        }
+
+        return (StatusCode::OK, Json(response_body)).into_response();
+    }
+
+    (
+        StatusCode::BAD_GATEWAY,
+        format!("all {} providers failed for embedding model: {}", max_attempts, req.model),
+    )
+        .into_response()
+}
+
+// ── Agent Messaging ─────────────────────────────────────────────────────
+
+async fn send_message(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let from_agent = match headers.get("X-Agent-Id").and_then(|v| v.to_str().ok()) {
+        Some(id) => id.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "X-Agent-Id header required").into_response(),
+    };
+    let signature = match headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        Some(s) => s.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "X-Signature header required").into_response(),
+    };
+
+    if let Err(e) = verify_agent_signature(s.registry.pool(), &from_agent, &signature, &body).await
+    {
+        return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+    }
+
+    let req: SendMessageRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    // Verify recipient exists
+    let exists: Option<String> =
+        match sqlx::query_scalar("SELECT agent_id FROM agents WHERE agent_id = ?")
+            .bind(&req.to_agent)
+            .fetch_optional(s.registry.pool())
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        };
+
+    if exists.is_none() {
+        return (StatusCode::NOT_FOUND, format!("recipient not found: {}", req.to_agent))
+            .into_response();
+    }
+
+    let now = ferris_common::unix_timestamp();
+    let message_id = uuid::Uuid::now_v7().to_string();
+    let expires_at = now + 86400; // 24 hours
+    let payload_str = req.payload.to_string();
+
+    let result = sqlx::query(
+        "INSERT INTO message_queue (message_id, from_agent, to_agent, payload, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&message_id)
+    .bind(&from_agent)
+    .bind(&req.to_agent)
+    .bind(&payload_str)
+    .bind(now)
+    .bind(expires_at)
+    .execute(s.registry.pool())
+    .await;
+
+    match result {
+        Ok(_) => {
+            tracing::info!(
+                message_id,
+                from = %from_agent,
+                to = %req.to_agent,
+                "message queued"
+            );
+            let response = serde_json::json!({
+                "message_id": message_id,
+                "expires_at": expires_at,
+            });
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn poll_messages(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(params): axum::extract::Query<MessageQuery>,
+) -> impl IntoResponse {
+    let agent_id = match headers
+        .get("X-Agent-Id")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .or(params.agent_id)
+    {
+        Some(id) => id,
+        None => return (StatusCode::BAD_REQUEST, "agent_id required").into_response(),
+    };
+
+    if let Some(sig) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        let body = headers.get("X-Timestamp").and_then(|v| v.to_str().ok()).unwrap_or("");
+        if let Err(e) =
+            verify_agent_signature(s.registry.pool(), &agent_id, sig, body.as_bytes()).await
+        {
+            return (StatusCode::UNAUTHORIZED, e.to_string()).into_response();
+        }
+    }
+
+    let now = ferris_common::unix_timestamp();
+
+    // Clean expired messages
+    let _ = sqlx::query("DELETE FROM message_queue WHERE expires_at < ?")
+        .bind(now)
+        .execute(s.registry.pool())
+        .await;
+
+    let limit = params.limit.unwrap_or(50);
+
+    let rows: Vec<MessageRow> = match sqlx::query_as(
+        "SELECT message_id, from_agent, to_agent, payload, created_at, expires_at, delivered_at
+         FROM message_queue
+         WHERE to_agent = ? AND delivered_at IS NULL AND expires_at >= ?
+         ORDER BY created_at ASC
+         LIMIT ?",
+    )
+    .bind(&agent_id)
+    .bind(now)
+    .bind(limit as i64)
+    .fetch_all(s.registry.pool())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    // Mark as delivered
+    let message_ids: Vec<String> = rows.iter().map(|r| r.message_id.clone()).collect();
+    if !message_ids.is_empty() {
+        let placeholders: Vec<&str> = message_ids.iter().map(|_| "?").collect();
+        let query = format!(
+            "UPDATE message_queue SET delivered_at = ? WHERE message_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query).bind(now);
+        for id in &message_ids {
+            q = q.bind(id);
+        }
+        let _ = q.execute(s.registry.pool()).await;
+    }
+
+    let messages: Vec<AgentMessage> = rows
+        .into_iter()
+        .map(|r| AgentMessage {
+            message_id: r.message_id,
+            from_agent: r.from_agent,
+            to_agent: r.to_agent,
+            payload: serde_json::from_str(&r.payload).unwrap_or(serde_json::Value::Null),
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+            delivered_at: Some(now),
+        })
+        .collect();
+
+    match serde_json::to_value(&messages) {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
 // ── Query params ────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
@@ -600,6 +964,24 @@ struct AgentQuery {
 struct HistoryQuery {
     agent_id: Option<String>,
     limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize)]
+struct MessageQuery {
+    agent_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct MessageRow {
+    message_id: String,
+    from_agent: String,
+    to_agent: String,
+    payload: String,
+    created_at: i64,
+    expires_at: i64,
+    delivered_at: Option<i64>,
 }
 
 #[derive(sqlx::FromRow, Serialize)]

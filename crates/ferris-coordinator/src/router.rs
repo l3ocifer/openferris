@@ -4,6 +4,7 @@ use sqlx::{Row, SqlitePool};
 
 // ── Routing Types ───────────────────────────────────────────────────────
 
+/// A scored provider candidate for routing an inference request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteCandidate {
     pub agent_id: String,
@@ -28,11 +29,13 @@ pub struct NetworkModel {
 
 // ── Inference Router ────────────────────────────────────────────────────
 
+/// Routes inference requests to the best available provider node.
 pub struct InferenceRouter {
     pool: SqlitePool,
 }
 
 impl InferenceRouter {
+    /// Create a new inference router backed by the given database pool.
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }

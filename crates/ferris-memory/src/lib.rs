@@ -61,6 +61,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 // ── Data types ─────────────────────────────────────────────────────────────
 
+/// A single key-value memory entry with optional metadata and similarity score.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub id: String,
@@ -76,6 +77,7 @@ pub struct MemoryEntry {
 
 // ── MemoryStore ────────────────────────────────────────────────────────────
 
+/// SQLite-backed key-value memory store with optional semantic search and encryption.
 pub struct MemoryStore {
     pool: SqlitePool,
     max_entries: u32,
@@ -86,6 +88,7 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
+    /// Create a new memory store with the given capacity limit.
     pub fn new(pool: SqlitePool, max_entries: u32) -> Self {
         Self {
             pool,

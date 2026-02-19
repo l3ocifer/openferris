@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 // ── Types ───────────────────────────────────────────────────────────────
 
+/// A candidate storage node with capacity and reputation info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCandidate {
     pub agent_id: String,
@@ -13,6 +14,7 @@ pub struct StorageCandidate {
     pub reputation: f64,
 }
 
+/// Metadata for a file stored on the network (owner, location, hash).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkObject {
     pub object_id: String,
@@ -26,11 +28,13 @@ pub struct NetworkObject {
 
 // ── Storage Router ──────────────────────────────────────────────────────
 
+/// Routes file storage requests to available storage nodes on the network.
 pub struct StorageRouter {
     pool: SqlitePool,
 }
 
 impl StorageRouter {
+    /// Create a new storage router backed by the given database pool.
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
