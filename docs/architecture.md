@@ -226,7 +226,7 @@ Consumer                    Coordinator                  Node A
    │                            │  Node A: hot llama3:70b  │
    │                            │  score = 0.94            │
    │                            │                          │
-   │                            │  POST /infer             │
+   │                            │  POST /v1/chat/completions│
    │                            │  Accept: text/event-stream│
    │                            │ ─────────────────────────>│
    │                            │                          │
@@ -245,14 +245,14 @@ Consumer                    Coordinator                  Node A
    │  SSE: data: [DONE]         │<─────────────────────────│
    │ <──────────────────────────│                          │
    │                            │                          │
-   │                            │  POST /settle            │
+   │                            │  POST /settle (Planned)  │
    │                            │  {input:500, output:200} │
    │                            │<─────────────────────────│
    │                            │                          │
    │                            │  Ledger:                 │
    │                            │  debit consumer  0.35cr  │
-   │                            │  credit Node A   0.315cr │
-   │                            │  platform fee    0.035cr │
+   │                            │  credit Node A   0.2975cr│
+   │                            │  platform fee    0.0525cr│
    │                            │                          │
 ```
 
@@ -284,7 +284,7 @@ Consumer                    Coordinator                  Node A
    │  SSE: direct stream        │                          │
    │ <─────────────────────────────────────────────────────│
    │                            │                          │
-   │                            │  POST /settle            │
+   │                            │  POST /settle (Planned)  │
    │                            │<─────────────────────────│
    │                            │                          │
 ```
@@ -942,21 +942,23 @@ The coordinator binary. Axum HTTP server. BUSL-1.1 licensed.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/agents/register` | Register node + manifest |
-| `POST` | `/agents/heartbeat` | Heartbeat with manifest update |
-| `GET`  | `/agents/messages` | Long-poll for queued messages |
+| `GET`  | `/health` | Coordinator health check |
+| `POST` | `/api/v1/register` | Register node + manifest |
+| `POST` | `/api/v1/heartbeat` | Heartbeat with manifest update |
+| `GET`  | `/api/v1/status` | Node/network status |
+| `GET`  | `/api/v1/wallet/balance` | Credit balance |
+| `GET`  | `/api/v1/wallet/history` | Transaction history |
+| `GET`  | `/api/v1/directory` | Agent directory listing |
+| `GET`  | `/dashboard/stats` | Dashboard statistics |
+| `GET`  | `/v1/models` | List available models across nodes |
 | `POST` | `/v1/chat/completions` | OpenAI-compatible inference |
-| `POST` | `/v1/embeddings` | Embedding requests |
-| `GET`  | `/directory/search` | Semantic agent search |
-| `POST` | `/directory/message` | Agent-to-agent message (queued 24hr) |
-| `GET`  | `/credits/balance` | Credit balance |
-| `GET`  | `/credits/history` | Transaction history |
-| `POST` | `/infer` | Internal: node-facing inference dispatch |
-| `POST` | `/settle` | Internal: node reports token usage |
 | `POST` | `/api/v1/network/store` | Store file on network node (signed) |
 | `GET`  | `/api/v1/network/files` | List agent's network files (signed) |
-| `GET`  | `/api/v1/network/files/{id}` | Retrieve file from network (signed) |
-| `GET`  | `/health` | Coordinator health check |
+| `GET`  | `/api/v1/network/files/{object_id}` | Retrieve file from network (signed) |
+| `POST` | `/v1/embeddings` | Embedding requests (Planned) |
+| `GET`  | `/agents/messages` | Long-poll for queued messages (Planned) |
+| `POST` | `/directory/message` | Agent-to-agent message, queued 24hr (Planned) |
+| `POST` | `/settle` | Internal: node reports token usage (Planned) |
 
 **Key crates:** `axum`, `tower`, `sqlx`, `tokio`
 
@@ -1116,7 +1118,7 @@ The coordinator exposes an OpenAI-compatible API. One endpoint, many demand sour
 | Endpoint | Compatible With | Notes |
 |----------|----------------|-------|
 | `POST /v1/chat/completions` | OpenRouter, LiteLLM, Vercel AI SDK, any OpenAI client | SSE streaming, function calling |
-| `POST /v1/embeddings` | LangChain, LlamaIndex, any embeddings consumer | Routed to nodes with embedding models |
+| `POST /v1/embeddings` | LangChain, LlamaIndex, any embeddings consumer | Planned — routed to nodes with embedding models |
 | `GET /v1/models` | Standard model listing | Returns union of all available models across nodes |
 
 **External provider registrations:**
@@ -1233,7 +1235,7 @@ evict_after_secs = 300                    # Remove node after 5 min offline
 
 [credits]
 signup_bonus = 100
-platform_fee_pct = 10                     # 10% of each transaction
+platform_fee_pct = 15                     # 15% of each transaction
 settlement_batch_secs = 60
 
 [pricing]

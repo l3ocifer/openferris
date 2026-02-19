@@ -1,10 +1,10 @@
-FROM rust:1.84-bookworm AS planner
+FROM rust:bookworm AS planner
 WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
 RUN cargo fetch
 
-FROM rust:1.84-bookworm AS builder
+FROM rust:bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,7 +25,8 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl libssl3 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r ferris && useradd -r -g ferris -m ferris
+    && groupadd -r ferris && useradd -r -g ferris -m ferris \
+    && mkdir -p /var/ferris && chown ferris:ferris /var/ferris
 
 COPY --from=builder /app/target/release/ferris /usr/local/bin/ferris
 COPY --from=builder /app/target/release/ferris-coordinator /usr/local/bin/ferris-coordinator

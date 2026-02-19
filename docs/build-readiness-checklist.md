@@ -247,6 +247,21 @@ Goal: start coding with minimal ambiguity and no cross-phase leakage.
 - [x] Rate limiting (ConcurrencyLimit 256, 10MB body limit)
 - [x] `network_objects` table for distributed file tracking
 
+## 14) Final Hardening — COMPLETE
+
+- [x] SSE streaming passthrough for inference responses (with background credit settlement)
+- [x] MCP `infer` tool (local Ollama inference via MCP)
+- [x] MCP `balance` tool (query coordinator credit balance via MCP)
+- [x] 12 MCP tools total: whoami, remember, recall, forget, store, retrieve, list_files, schedule_task, list_tasks, cancel_task, infer, balance
+- [x] `rand`/`rand_core` dependency conflict resolved (explicit `rand_core = "0.6"`)
+- [x] CI uses `--locked` for deterministic builds
+- [x] All production `unwrap()` calls replaced with proper error handling
+- [x] Windows-safe `dirs::home_dir()` fallbacks (no panics)
+- [x] `cargo fmt`, `cargo clippy -D warnings`, `cargo test` all green
+- [x] `cargo audit` and `cargo deny` passing in CI
+- [x] Documentation aligned with actual implementation (API paths, MCP tools, fee %)
+- [x] docker-compose.yml for local node + coordinator testing
+
 ## 12) Production Infrastructure — COMPLETE
 
 ### Coordinator Hosting

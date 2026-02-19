@@ -41,8 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with SSM access, hardened security group, encrypted EBS, termination protection,
   and automatic updates.
 
+- **SSE streaming passthrough:** coordinator proxies Server-Sent Events from upstream
+  inference providers. Background task extracts usage from final chunk for credit settlement.
+- **MCP `infer` tool:** run inference via local Ollama directly from any MCP client.
+- **MCP `balance` tool:** query coordinator credit balance from MCP.
+- **docker-compose.yml:** local development setup with coordinator + node services.
+
 ### Changed
 - Coordinator URL updated from `api.openferris.dev` to `api.openferris.com`.
+- MCP tools expanded from 10 to 12 (`infer`, `balance` added).
+- CI uses `--locked` on all cargo commands for deterministic builds.
+- Documentation aligned with implementation: corrected API paths, MCP tool list, fee percentages.
+
+### Fixed
+- `rand`/`rand_core` dependency conflict with `fastembed` resolved by pinning `rand_core = "0.6"`.
+- Windows panic on `dirs::home_dir()` replaced with graceful fallback.
+- Production `unwrap()` calls in coordinator response builder, storage path handling, and
+  memory mutex replaced with proper error handling.
 
 ## [0.1.0] - 2026-02-17
 

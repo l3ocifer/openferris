@@ -409,8 +409,13 @@ async fn cmd_serve(
             ));
             let tasks =
                 Arc::new(ferris_tasks::TaskScheduler::new(pool, config.tasks.max_scheduled));
+            let inference = Arc::new(ferris_inference::OllamaProxy::new(
+                &config.inference.ollama_url,
+                config.inference.max_concurrent_requests,
+            ));
 
-            ferris_mcp::serve_stdio(identity.agent_id, memory, storage, tasks).await
+            ferris_mcp::serve_stdio(identity.agent_id, memory, storage, tasks, inference, None)
+                .await
         }
         "http" => {
             tracing::info!(agent_id = %identity.agent_id, "starting HTTP server");

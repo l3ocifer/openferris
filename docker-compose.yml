@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["ferris-coordinator", "--host", "0.0.0.0", "--port", "8421"]
+    ports:
+      - "8421:8421"
+    volumes:
+      - coordinator-data:/var/ferris
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8421/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    environment:
+      RUST_LOG: ferris=info
+
+  node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["ferris"]
+    command:
+      - "start"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8420"
+      - "--coordinator-url"
+      - "http://coordinator:8421"
+    ports:
+      - "8420:8420"
+    volumes:
+      - node-data:/var/ferris
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    environment:
+      RUST_LOG: ferris=info
+      FERRIS_DATA_DIR: /var/ferris
+
+volumes:
+  coordinator-data:
+  node-data:

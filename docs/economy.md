@@ -55,8 +55,8 @@ Cloud API price (Together AI):        $0.90/M tokens  (llama3:70b)
 OpenFerris listed on OpenRouter:      $0.40/M tokens
   → OpenRouter takes ~15%:            $0.06
   → OpenFerris keeps:                 $0.34
-    → Node earns 80-85%:              $0.27-0.29
-    → Platform keeps:                 $0.05-0.07
+    → Node earns 85%:                 $0.29
+    → Platform keeps 15%:             $0.05
 
 Node's electricity cost:              ~$0.03-0.08/M tokens
 Node profit:                          ~$0.20/M tokens pure margin
@@ -65,18 +65,18 @@ Node profit:                          ~$0.20/M tokens pure margin
 **Economics when serving directly (via OpenFerris API):**
 ```
 OpenFerris direct price:              $0.40/M tokens
-  → Node earns 80-90%:               $0.32-0.36
-  → Platform keeps 10-20%:           $0.04-0.08
+  → Node earns 85%:                  $0.34
+  → Platform keeps 15%:              $0.06
 
-Higher margin for both — no OpenRouter cut. Direct users migrate over time.
+Higher margin for node — no OpenRouter cut. Direct users migrate over time.
 ```
 
-| Tier | Example Model | API Price (per 1M tokens) | Local Cost (electricity) | OpenFerris Price | Contributor Earns (80-90%) |
+| Tier | Example Model | API Price (per 1M tokens) | Local Cost (electricity) | OpenFerris Price | Contributor Earns (85%) |
 |------|--------------|--------------------------|--------------------------|--------------------|--------------------|
-| Premium | GPT-4o equivalent | $2.50-10 | ~$0.08 | $1.25-5.00 (50% of API) | $1.00-4.50 |
-| Standard | Llama 3 70B | N/A | ~$0.08 | $0.50-1.00 | $0.40-0.90 |
-| Light | Llama 3 8B / Phi-4 | N/A | ~$0.02 | $0.10-0.25 | $0.08-0.23 |
-| Embedding | all-MiniLM-L6-v2 equiv | $0.02 | ~$0.001 | $0.01 | $0.009 |
+| Premium | GPT-4o equivalent | $2.50-10 | ~$0.08 | $1.25-5.00 (50% of API) | $1.06-4.25 |
+| Standard | Llama 3 70B | N/A | ~$0.08 | $0.50-1.00 | $0.43-0.85 |
+| Light | Llama 3 8B / Phi-4 | N/A | ~$0.02 | $0.10-0.25 | $0.09-0.21 |
+| Embedding | all-MiniLM-L6-v2 equiv | $0.02 | ~$0.001 | $0.01 | $0.0085 |
 
 **Realistic daily earnings by hardware:**
 
@@ -154,9 +154,9 @@ pub struct Transaction {
     pub id: Uuid,
     pub timestamp: DateTime<Utc>,
     pub tx_type: TransactionType,
-    pub from_node: NodeId,        // debited
-    pub to_node: NodeId,          // credited
-    pub amount: u64,              // millicredits (1 credit = 1000 mc)
+    pub from_agent: Option<String>, // debited
+    pub to_agent: Option<String>,   // credited
+    pub amount_mc: i64,             // millicredits (1 credit = 1000 mc)
     pub resource: ResourceType,   // Inference, Storage, Compute, Transfer
     pub metadata: serde_json::Value,
     pub status: TxStatus,         // Pending, Settled, Disputed, Refunded
@@ -182,7 +182,7 @@ pub enum TransactionType {
 - During a job: credits held in **escrow**
 - On completion: escrow released to contributor
 - On failure/timeout: escrow returned to consumer
-- Platform fee (10-20%) deducted at settlement
+- Platform fee (15%) deducted at settlement
 
 ### Starting Balance
 

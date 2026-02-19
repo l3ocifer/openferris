@@ -1236,7 +1236,9 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "ferris-common",
+ "ferris-inference",
  "ferris-memory",
+ "ferris-net",
  "ferris-storage",
  "ferris-tasks",
  "rmcp",

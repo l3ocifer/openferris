@@ -4,7 +4,7 @@
 
 > OpenRouter aggregates cloud LLM providers behind one API. OpenFerris aggregates local compute — Ollama instances, idle GPUs, spare storage, CPU cycles — behind one API. We don't run any models. We just route. Same playbook, but for everything agents need, not just inference.
 
-**Status:** v0.1.0-alpha — Local agent fully functional. Network inference routing and distributed storage operational via coordinator. Credit economy active. Memory, compute, and agent messaging are local-only (network versions planned).
+**Status:** v0.1.0-alpha — Local agent fully functional. Network inference routing (with SSE streaming and retry/fallback) and distributed storage operational via coordinator. Credit economy active. 12 MCP tools. Agent messaging and distributed compute planned.
 
 **Website:** openferris.com
 **License:** MIT / Apache 2.0
@@ -90,12 +90,12 @@ ferris start --contribute-percent 75   # generous
 Every capability is an MCP tool. Any LLM that speaks MCP uses OpenFerris immediately — Claude, ChatGPT, local Ollama agents, anything.
 
 ```
-Inference: infer(prompt, model?, priority?)        → routed to best available node
+Inference: infer(prompt, model?, temperature?)      → runs on local Ollama
 Memory:    remember(key, value) | recall(query)     → persistent across sessions
-Storage:   store(file) | retrieve(id) | list()      → distributed across network
-Tasks:     schedule(when, what) | subscribe(event)  → cron for agents
-Directory: find_agents(need) | message(agent, msg)  → discover and hire agents
-Wallet:    balance() | earn() | spend()             → internal credit economy
+Storage:   store(file) | retrieve(id) | list()      → content-addressed, encrypted at rest
+Tasks:     schedule(when, what) | list | cancel      → cron for agents
+Wallet:    balance()                                → query credit balance
+Identity:  whoami()                                 → agent identity
 ```
 
 ### Routing Logic (The OpenRouter Parallel)
@@ -368,7 +368,7 @@ At 1,000 nodes (50% free, 40% Pro, 10% Team):
 - [x] Rate limiting: ConcurrencyLimit (256) + 10MB body limit on coordinator
 - [x] Credit spending: hire agents, pay for services through directory
 - [ ] Agent-to-agent encrypted messaging
-- [ ] SSE streaming for inference
+- [x] SSE streaming passthrough for inference
 - [ ] **S3-compatible storage endpoint** — unlocks rclone, backup tools, and every S3 client
 - [ ] **GitHub Actions self-hosted runner integration** — cheap CI/CD from the network
 - [ ] **Open WebUI / Jan / LobeChat provider config** — "OpenFerris Network" option in popular LLM UIs

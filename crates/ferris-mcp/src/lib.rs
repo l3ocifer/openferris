@@ -3,7 +3,9 @@ use std::sync::Arc;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use ferris_common::FerrisError;
+use ferris_inference::OllamaProxy;
 use ferris_memory::MemoryStore;
+use ferris_net::CoordinatorClient;
 use ferris_storage::ObjectStore;
 use ferris_tasks::TaskScheduler;
 use rmcp::{
@@ -74,6 +76,18 @@ struct CancelTaskParams {
     task_id: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct InferParams {
+    /// The prompt or message to send
+    prompt: String,
+    /// Model name (e.g. "llama3:8b"). Uses first available if omitted.
+    model: Option<String>,
+    /// Sampling temperature (0.0-2.0)
+    temperature: Option<f64>,
+    /// Maximum tokens to generate
+    max_tokens: Option<u32>,
+}
+
 // ── MCP Server ──────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -82,6 +96,8 @@ pub struct FerrisMcpServer {
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
+    inference: Arc<OllamaProxy>,
+    coordinator: Option<Arc<CoordinatorClient>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -92,8 +108,18 @@ impl FerrisMcpServer {
         memory: Arc<MemoryStore>,
         storage: Arc<ObjectStore>,
         tasks: Arc<TaskScheduler>,
+        inference: Arc<OllamaProxy>,
+        coordinator: Option<Arc<CoordinatorClient>>,
     ) -> Self {
-        Self { agent_id, memory, storage, tasks, tool_router: Self::tool_router() }
+        Self {
+            agent_id,
+            memory,
+            storage,
+            tasks,
+            inference,
+            coordinator,
+            tool_router: Self::tool_router(),
+        }
     }
 
     #[tool(description = "Returns the agent's identity (agent_id)")]
@@ -246,6 +272,72 @@ impl FerrisMcpServer {
             .map(|()| CallToolResult::success(vec![Content::text("task cancelled")]))
             .map_err(|e| mcp_internal(e.to_string()))
     }
+
+    #[tool(
+        description = "Run inference via the local Ollama instance. Returns the model's response text."
+    )]
+    async fn infer(
+        &self,
+        Parameters(p): Parameters<InferParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let model = p.model.unwrap_or_else(|| "llama3:8b".to_string());
+        let mut req = ferris_inference::ChatCompletionRequest {
+            model: model.clone(),
+            messages: vec![ferris_inference::ChatMessage {
+                role: "user".to_string(),
+                content: p.prompt,
+            }],
+            stream: false,
+            temperature: p.temperature,
+            max_tokens: p.max_tokens,
+        };
+        req.stream = false;
+
+        match self.inference.chat_completion(&self.agent_id, &req).await {
+            Ok(result) => {
+                let text = result
+                    .response
+                    .choices
+                    .first()
+                    .map(|c| c.message.content.as_str())
+                    .unwrap_or("");
+                let resp = serde_json::json!({
+                    "model": result.response.model,
+                    "content": text,
+                    "tokens_in": result.response.usage.prompt_tokens,
+                    "tokens_out": result.response.usage.completion_tokens,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&resp).unwrap_or_default(),
+                )]))
+            }
+            Err(e) => Err(mcp_internal(format!("inference failed: {e}"))),
+        }
+    }
+
+    #[tool(description = "Query credit balance from the coordinator network")]
+    async fn balance(&self) -> Result<CallToolResult, McpError> {
+        let client = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| mcp_internal("not connected to coordinator".to_string()))?;
+
+        match client.get_balance().await {
+            Ok(bal) => {
+                let soft = bal.soft_balance_mc as f64 / 1000.0;
+                let hard = bal.hard_balance_mc as f64 / 1000.0;
+                let resp = serde_json::json!({
+                    "soft_credits": soft,
+                    "hard_credits": hard,
+                    "total_credits": soft + hard,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&resp).unwrap_or_default(),
+                )]))
+            }
+            Err(e) => Err(mcp_internal(format!("balance query failed: {e}"))),
+        }
+    }
 }
 
 #[tool_handler]
@@ -281,8 +373,10 @@ pub async fn serve_stdio(
     memory: Arc<MemoryStore>,
     storage: Arc<ObjectStore>,
     tasks: Arc<TaskScheduler>,
+    inference: Arc<OllamaProxy>,
+    coordinator: Option<Arc<CoordinatorClient>>,
 ) -> ferris_common::Result<()> {
-    let server = FerrisMcpServer::new(agent_id, memory, storage, tasks);
+    let server = FerrisMcpServer::new(agent_id, memory, storage, tasks, inference, coordinator);
     let service = server
         .serve(stdio())
         .await
