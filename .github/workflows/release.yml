@@ -36,6 +36,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -56,10 +60,14 @@ jobs:
       - name: Build ferris (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} --bin ferris
+        env:
+          CROSS_CONTAINER_OPTS: "--env OPENSSL_STATIC=1"
 
       - name: Build ferris-coordinator (cross)
         if: matrix.cross
         run: cross build --release --target ${{ matrix.target }} --bin ferris-coordinator
+        env:
+          CROSS_CONTAINER_OPTS: "--env OPENSSL_STATIC=1"
 
       - name: Package (unix)
         if: runner.os != 'Windows'
