@@ -44,3 +44,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 rmcp = { version = "0.16", features = ["server", "transport-io", "schemars"] }
 schemars = "1"
 uuid = { version = "1", features = ["serde", "v7"] }
+openssl = { version = "0.10", features = ["vendored"] }
