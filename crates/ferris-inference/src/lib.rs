@@ -2,10 +2,15 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use ferris_common::{FerrisError, ModelInfo, Result, SettlementReport};
+use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use uuid::Uuid;
+
+/// Boxed stream of OpenAI-compatible SSE bytes.
+pub type ChatStream = BoxStream<'static, std::result::Result<Bytes, std::io::Error>>;
 
 #[cfg(feature = "candle-backend")]
 pub mod candle_backend;
@@ -82,6 +87,52 @@ pub trait InferenceBackend: Send + Sync {
         agent_id: &str,
         req: &ChatCompletionRequest,
     ) -> Result<InferenceResult>;
+
+    /// Stream a chat completion as OpenAI-compatible SSE bytes
+    /// (`data: {chunk}\n\n` ... `data: [DONE]\n\n`).
+    ///
+    /// Default implementation calls `chat_completion` and synthesizes a single
+    /// SSE chunk + `[DONE]` terminator. Backends with native streaming
+    /// (e.g. Ollama) should override this for true token-by-token delivery.
+    async fn chat_completion_stream(
+        &self,
+        agent_id: &str,
+        req: &ChatCompletionRequest,
+    ) -> Result<ChatStream> {
+        let mut req = req.clone();
+        req.stream = false;
+        let result = self.chat_completion(agent_id, &req).await?;
+        let response = result.response;
+        let content = response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+        let finish = response
+            .choices
+            .first()
+            .map(|c| c.finish_reason.clone())
+            .unwrap_or_else(|| "stop".to_string());
+        let chunk = serde_json::json!({
+            "id": response.id,
+            "object": "chat.completion.chunk",
+            "created": response.created,
+            "model": response.model,
+            "choices": [{
+                "index": 0,
+                "delta": { "role": "assistant", "content": content },
+                "finish_reason": finish,
+            }],
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+        });
+        let sse = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+        let stream = futures::stream::iter([Ok(Bytes::from(sse))]);
+        Ok(Box::pin(stream))
+    }
 
     /// Current number of in-flight requests.
     fn current_load(&self) -> u32;
@@ -225,6 +276,48 @@ impl InferenceBackend for OllamaBackend {
         );
 
         Ok(InferenceResult { response: completion, settlement })
+    }
+
+    async fn chat_completion_stream(
+        &self,
+        _agent_id: &str,
+        req: &ChatCompletionRequest,
+    ) -> Result<ChatStream> {
+        let current = self.current_requests.fetch_add(1, Ordering::SeqCst);
+        if current >= self.max_concurrent {
+            self.current_requests.fetch_sub(1, Ordering::SeqCst);
+            return Err(FerrisError::Inference(format!(
+                "at capacity ({}/{})",
+                current, self.max_concurrent
+            )));
+        }
+        let guard = RequestGuard(self.current_requests.clone());
+
+        let mut forward_req = req.clone();
+        forward_req.stream = true;
+
+        let resp = self
+            .http
+            .post(format!("{}/v1/chat/completions", self.base_url))
+            .json(&forward_req)
+            .send()
+            .await
+            .map_err(|e| FerrisError::Inference(format!("ollama request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(FerrisError::Inference(format!("ollama error ({status}): {text}")));
+        }
+
+        use futures::StreamExt;
+        let upstream = resp.bytes_stream().map(|r| r.map_err(std::io::Error::other));
+        // Keep the request guard alive for the full stream lifetime.
+        let stream = upstream.chain(futures::stream::once(async move {
+            drop(guard);
+            Ok(Bytes::new())
+        }));
+        Ok(Box::pin(stream))
     }
 }
 

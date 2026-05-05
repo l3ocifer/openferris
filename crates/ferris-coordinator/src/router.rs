@@ -40,19 +40,6 @@ impl InferenceRouter {
         Self { pool }
     }
 
-    /// Find the best agent to serve a request for the given model.
-    pub async fn route(
-        &self,
-        model_name: &str,
-        requester_region: Option<&str>,
-    ) -> Result<RouteCandidate> {
-        let candidates = self.score_candidates(model_name, requester_region).await?;
-
-        candidates.into_iter().next().ok_or_else(|| {
-            FerrisError::NotFound(format!("no active provider for model: {model_name}"))
-        })
-    }
-
     /// Score and rank all candidates for a model.
     pub async fn score_candidates(
         &self,

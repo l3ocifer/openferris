@@ -116,7 +116,7 @@ impl CreditLedger {
         let now = unix_timestamp();
         let tx_id = Uuid::now_v7().to_string();
 
-        sqlx::query(
+        let updated = sqlx::query(
             "UPDATE credits SET soft_balance_mc = soft_balance_mc + ?,
                                 total_earned_soft_mc = total_earned_soft_mc + ?
              WHERE agent_id = ?",
@@ -127,6 +127,10 @@ impl CreditLedger {
         .execute(&self.pool)
         .await
         .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+        if updated.rows_affected() == 0 {
+            return Err(FerrisError::NotFound(format!("credits for agent: {agent_id}")));
+        }
 
         sqlx::query(
             "INSERT INTO transactions (tx_id, timestamp, to_agent, tx_type, amount_mc, credit_type, status)
@@ -179,58 +183,9 @@ impl CreditLedger {
 
         let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        // Check consumer has enough balance (soft or hard)
-        let row =
-            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
-                .bind(consumer_id)
-                .fetch_optional(&mut *txn)
-                .await
-                .map_err(|e| FerrisError::Database(e.to_string()))?
-                .ok_or_else(|| {
-                    FerrisError::NotFound(format!("credits for agent: {consumer_id}"))
-                })?;
+        debit_consumer(&mut txn, consumer_id, amount_mc, true).await?;
+        credit_provider(&mut txn, provider_id, provider_payout).await?;
 
-        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
-        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
-        let total_available = soft_balance + hard_balance;
-        if total_available < amount_mc {
-            return Err(FerrisError::InsufficientCredits(format!(
-                "need {amount_mc} mc, have {total_available} mc"
-            )));
-        }
-
-        // Debit from soft first, then hard
-        let soft_debit = amount_mc.min(soft_balance);
-        let hard_debit = amount_mc - soft_debit;
-
-        sqlx::query(
-            "UPDATE credits SET soft_balance_mc = soft_balance_mc - ?,
-                                hard_balance_mc = hard_balance_mc - ?,
-                                total_spent_mc = total_spent_mc + ?
-             WHERE agent_id = ?",
-        )
-        .bind(soft_debit)
-        .bind(hard_debit)
-        .bind(amount_mc)
-        .bind(consumer_id)
-        .execute(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
-
-        // Credit provider (hard credits — earned)
-        sqlx::query(
-            "UPDATE credits SET hard_balance_mc = hard_balance_mc + ?,
-                                total_earned_hard_mc = total_earned_hard_mc + ?
-             WHERE agent_id = ?",
-        )
-        .bind(provider_payout)
-        .bind(provider_payout)
-        .bind(provider_id)
-        .execute(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
-
-        // Record transaction
         sqlx::query(
             "INSERT INTO transactions
              (tx_id, timestamp, from_agent, to_agent, tx_type, amount_mc, credit_type,
@@ -288,51 +243,8 @@ impl CreditLedger {
 
         let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        let row =
-            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
-                .bind(owner_id)
-                .fetch_optional(&mut *txn)
-                .await
-                .map_err(|e| FerrisError::Database(e.to_string()))?
-                .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {owner_id}")))?;
-
-        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
-        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
-        let total_available = soft_balance + hard_balance;
-        if total_available < amount_mc {
-            return Err(FerrisError::InsufficientCredits(format!(
-                "need {amount_mc} mc, have {total_available} mc"
-            )));
-        }
-
-        let soft_debit = amount_mc.min(soft_balance);
-        let hard_debit = amount_mc - soft_debit;
-
-        sqlx::query(
-            "UPDATE credits SET soft_balance_mc = soft_balance_mc - ?,
-                                hard_balance_mc = hard_balance_mc - ?,
-                                total_spent_mc = total_spent_mc + ?
-             WHERE agent_id = ?",
-        )
-        .bind(soft_debit)
-        .bind(hard_debit)
-        .bind(amount_mc)
-        .bind(owner_id)
-        .execute(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
-
-        sqlx::query(
-            "UPDATE credits SET hard_balance_mc = hard_balance_mc + ?,
-                                total_earned_hard_mc = total_earned_hard_mc + ?
-             WHERE agent_id = ?",
-        )
-        .bind(provider_payout)
-        .bind(provider_payout)
-        .bind(storage_provider_id)
-        .execute(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
+        debit_consumer(&mut txn, owner_id, amount_mc, true).await?;
+        credit_provider(&mut txn, storage_provider_id, provider_payout).await?;
 
         sqlx::query(
             "INSERT INTO transactions
@@ -407,39 +319,7 @@ impl CreditLedger {
 
         let mut txn = self.pool.begin().await.map_err(|e| FerrisError::Database(e.to_string()))?;
 
-        // Check balance
-        let row =
-            sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
-                .bind(buyer_id)
-                .fetch_optional(&mut *txn)
-                .await
-                .map_err(|e| FerrisError::Database(e.to_string()))?
-                .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {buyer_id}")))?;
-
-        let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
-        let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
-        let total_available = soft_balance + hard_balance;
-        if total_available < amount_mc {
-            return Err(FerrisError::InsufficientCredits(format!(
-                "escrow requires {amount_mc} mc, have {total_available} mc"
-            )));
-        }
-
-        // Debit from soft first, then hard
-        let soft_debit = amount_mc.min(soft_balance);
-        let hard_debit = amount_mc - soft_debit;
-
-        sqlx::query(
-            "UPDATE credits SET soft_balance_mc = soft_balance_mc - ?,
-                                hard_balance_mc = hard_balance_mc - ?
-             WHERE agent_id = ?",
-        )
-        .bind(soft_debit)
-        .bind(hard_debit)
-        .bind(buyer_id)
-        .execute(&mut *txn)
-        .await
-        .map_err(|e| FerrisError::Database(e.to_string()))?;
+        debit_consumer(&mut txn, buyer_id, amount_mc, false).await?;
 
         sqlx::query(
             "INSERT INTO escrow (escrow_id, job_id, buyer_agent, seller_agent, amount_mc, created_at, expires_at, status)
@@ -540,6 +420,82 @@ impl CreditLedger {
 
         Ok(())
     }
+}
+
+// ── Internal helpers ────────────────────────────────────────────────────
+
+/// Atomically debit `amount_mc` from a consumer, drawing from soft balance
+/// first then hard. Errors if the account is missing or has insufficient credits.
+///
+/// When `track_as_spent` is true, also increments `total_spent_mc` (use for
+/// final settlements; not for escrow holds where credits may be refunded).
+async fn debit_consumer(
+    txn: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    consumer_id: &str,
+    amount_mc: i64,
+    track_as_spent: bool,
+) -> Result<()> {
+    let row =
+        sqlx::query("SELECT soft_balance_mc, hard_balance_mc FROM credits WHERE agent_id = ?")
+            .bind(consumer_id)
+            .fetch_optional(&mut **txn)
+            .await
+            .map_err(|e| FerrisError::Database(e.to_string()))?
+            .ok_or_else(|| FerrisError::NotFound(format!("credits for agent: {consumer_id}")))?;
+
+    let soft_balance: i64 = Row::get(&row, "soft_balance_mc");
+    let hard_balance: i64 = Row::get(&row, "hard_balance_mc");
+    let total_available = soft_balance + hard_balance;
+    if total_available < amount_mc {
+        return Err(FerrisError::InsufficientCredits(format!(
+            "need {amount_mc} mc, have {total_available} mc"
+        )));
+    }
+
+    let soft_debit = amount_mc.min(soft_balance);
+    let hard_debit = amount_mc - soft_debit;
+    let spent_delta = if track_as_spent { amount_mc } else { 0 };
+
+    sqlx::query(
+        "UPDATE credits SET soft_balance_mc = soft_balance_mc - ?,
+                            hard_balance_mc = hard_balance_mc - ?,
+                            total_spent_mc = total_spent_mc + ?
+         WHERE agent_id = ?",
+    )
+    .bind(soft_debit)
+    .bind(hard_debit)
+    .bind(spent_delta)
+    .bind(consumer_id)
+    .execute(&mut **txn)
+    .await
+    .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Credit a provider's hard balance (earned credits).
+async fn credit_provider(
+    txn: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    provider_id: &str,
+    amount_mc: i64,
+) -> Result<()> {
+    let updated = sqlx::query(
+        "UPDATE credits SET hard_balance_mc = hard_balance_mc + ?,
+                            total_earned_hard_mc = total_earned_hard_mc + ?
+         WHERE agent_id = ?",
+    )
+    .bind(amount_mc)
+    .bind(amount_mc)
+    .bind(provider_id)
+    .execute(&mut **txn)
+    .await
+    .map_err(|e| FerrisError::Database(e.to_string()))?;
+
+    if updated.rows_affected() == 0 {
+        return Err(FerrisError::NotFound(format!("credits for agent: {provider_id}")));
+    }
+
+    Ok(())
 }
 
 fn row_to_transaction(row: &sqlx::sqlite::SqliteRow) -> Transaction {

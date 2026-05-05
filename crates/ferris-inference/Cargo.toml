@@ -18,7 +18,9 @@ mobile = ["candle-backend"]
 
 [dependencies]
 async-trait = "0.1"
+bytes = "1"
 ferris-common = { path = "../ferris-common" }
+futures = "0.3"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -8,8 +8,6 @@ use ferris_common::{
     FerrisError, HeartbeatRequest, HeartbeatResponse, RegisterRequest, RegisterResponse, Result,
     WalletBalance,
 };
-use tokio::sync::watch;
-use tracing::{error, info, warn};
 
 // ── Coordinator Client ──────────────────────────────────────────────────
 
@@ -120,51 +118,6 @@ impl CoordinatorClient {
 
         resp.json().await.map_err(|e| FerrisError::Network(format!("balance parse: {e}")))
     }
-}
-
-// ── Heartbeat Loop ──────────────────────────────────────────────────────
-
-/// Runs the heartbeat loop in the background. Returns a shutdown sender.
-pub async fn start_heartbeat_loop(
-    client: CoordinatorClient,
-    make_request: impl Fn() -> HeartbeatRequest + Send + 'static,
-    interval_secs: u64,
-) -> watch::Sender<bool> {
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    let req = make_request();
-                    match client.heartbeat(&req).await {
-                        Ok(resp) => {
-                            if resp.status != "ok" {
-                                warn!(status = %resp.status, "coordinator heartbeat status");
-                            }
-                            if !resp.queued_messages.is_empty() {
-                                info!(count = resp.queued_messages.len(), "received queued messages");
-                            }
-                        }
-                        Err(e) => {
-                            error!(error = %e, "heartbeat failed");
-                        }
-                    }
-                }
-                _ = shutdown_rx.changed() => {
-                    if *shutdown_rx.borrow() {
-                        info!("heartbeat loop shutting down");
-                        break;
-                    }
-                }
-            }
-        }
-    });
-
-    shutdown_tx
 }
 
 #[cfg(test)]

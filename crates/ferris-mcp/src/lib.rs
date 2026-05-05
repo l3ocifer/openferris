@@ -281,9 +281,8 @@ impl FerrisMcpServer {
         &self,
         Parameters(p): Parameters<InferParams>,
     ) -> Result<CallToolResult, McpError> {
-        let model = p.model.unwrap_or_else(|| "llama3:8b".to_string());
-        let mut req = ferris_inference::ChatCompletionRequest {
-            model: model.clone(),
+        let req = ferris_inference::ChatCompletionRequest {
+            model: p.model.unwrap_or_else(|| "llama3:8b".to_string()),
             messages: vec![ferris_inference::ChatMessage {
                 role: "user".to_string(),
                 content: p.prompt,
@@ -292,7 +291,6 @@ impl FerrisMcpServer {
             temperature: p.temperature,
             max_tokens: p.max_tokens,
         };
-        req.stream = false;
 
         match self.inference.chat_completion(&self.agent_id, &req).await {
             Ok(result) => {

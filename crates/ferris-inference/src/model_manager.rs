@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "candle-backend")]
 use ferris_common::{FerrisError, Result};
+#[cfg(feature = "candle-backend")]
 use tracing::info;
 
 /// A model recommendation based on available system resources.

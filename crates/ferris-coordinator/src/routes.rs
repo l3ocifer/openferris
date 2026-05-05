@@ -1203,6 +1203,12 @@ async fn network_retrieve(
 
     match proxy_result {
         Ok(resp) if resp.status().is_success() => {
+            let content_type = resp
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/json")
+                .to_string();
             let body = match resp.bytes().await {
                 Ok(b) => b,
                 Err(e) => {
@@ -1214,7 +1220,8 @@ async fn network_retrieve(
                 }
             };
 
-            (StatusCode::OK, body).into_response()
+            (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, content_type)], body)
+                .into_response()
         }
         Ok(resp) => {
             let status = resp.status();

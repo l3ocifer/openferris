@@ -60,6 +60,25 @@ pub struct FerrisConfig {
     pub network: NetworkConfig,
     #[serde(default)]
     pub inference: InferenceConfig,
+    #[serde(default)]
+    pub server: ServerConfig,
+}
+
+/// HTTP server settings (auth, CORS).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServerConfig {
+    /// If set, all `/v1/*` requests must include `Authorization: Bearer <api_key>`.
+    /// Generated automatically by `ferris cursor` if missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    /// Allow all origins on `/v1/*` (default: true). Useful for browser-based
+    /// OpenAI clients hitting a tunneled local node.
+    #[serde(default = "default_cors_permissive")]
+    pub cors_permissive: bool,
+}
+
+fn default_cors_permissive() -> bool {
+    true
 }
 
 /// Agent identity and data directory settings.
@@ -147,6 +166,7 @@ impl Default for FerrisConfig {
             tasks: TasksConfig { max_scheduled: 10 },
             network: NetworkConfig::default(),
             inference: InferenceConfig::default(),
+            server: ServerConfig::default(),
         }
     }
 }

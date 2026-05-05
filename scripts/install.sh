@@ -60,8 +60,11 @@ download() {
     local url="$1" dest="$2"
     if command -v curl &>/dev/null; then
         curl -fsSL "$url" -o "$dest"
-    else
+    elif command -v wget &>/dev/null; then
         wget -qO "$dest" "$url"
+    else
+        echo "error: curl or wget required" >&2
+        return 1
     fi
 }
 
@@ -84,14 +87,45 @@ main() {
     fi
     echo "Version:  ${tag}"
 
-    local url="https://github.com/${REPO}/releases/download/${tag}/${BINARY}-${target}"
+    local asset="${BINARY}-${target}"
+    local url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+    local sums_url="https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS.txt"
     local tmpdir
     tmpdir="$(mktemp -d)"
     local tmpfile="${tmpdir}/${BINARY}"
+    local sumsfile="${tmpdir}/SHA256SUMS.txt"
 
     echo "Downloading ${BINARY}..."
     download "$url" "$tmpfile"
     chmod +x "$tmpfile"
+
+    if download "$sums_url" "$sumsfile" 2>/dev/null; then
+        echo "Verifying SHA256 checksum..."
+        local expected actual
+        expected="$(grep " ${asset}\$" "$sumsfile" | awk '{print $1}')"
+        if [ -z "$expected" ]; then
+            echo "warning: ${asset} not in SHA256SUMS.txt; skipping verification"
+        else
+            if command -v sha256sum &>/dev/null; then
+                actual="$(sha256sum "$tmpfile" | awk '{print $1}')"
+            elif command -v shasum &>/dev/null; then
+                actual="$(shasum -a 256 "$tmpfile" | awk '{print $1}')"
+            else
+                echo "warning: no sha256 tool found; skipping verification"
+                actual="$expected"
+            fi
+            if [ "$expected" != "$actual" ]; then
+                echo "error: checksum mismatch"
+                echo "  expected: $expected"
+                echo "  actual:   $actual"
+                rm -rf "$tmpdir"
+                exit 1
+            fi
+            echo "Checksum OK."
+        fi
+    else
+        echo "warning: SHA256SUMS.txt not available; skipping verification"
+    fi
 
     echo "Installing to ${INSTALL_DIR}/${BINARY}..."
     if [ -w "$INSTALL_DIR" ]; then

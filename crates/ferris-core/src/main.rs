@@ -162,13 +162,7 @@ async fn cmd_start(
     let full_resources = ferris_core::resources::detect();
     let contributed = full_resources.contributed(contribute_pct);
 
-    let models_dir = data_dir.join("models");
-    let inference = ferris_inference::create_backend(
-        &config.inference.ollama_url,
-        config.inference.max_concurrent_requests,
-        &models_dir,
-    )
-    .await?;
+    let inference = ferris_core::build_inference_backend(&config, data_dir).await?;
     let models: Vec<ferris_common::ModelInfo> = inference.list_models().await.unwrap_or_default();
 
     println!();
@@ -403,13 +397,7 @@ async fn cmd_serve(
             ));
             let tasks =
                 Arc::new(ferris_tasks::TaskScheduler::new(pool, config.tasks.max_scheduled));
-            let models_dir = data_dir.join("models");
-            let inference = ferris_inference::create_backend(
-                &config.inference.ollama_url,
-                config.inference.max_concurrent_requests,
-                &models_dir,
-            )
-            .await?;
+            let inference = ferris_core::build_inference_backend(&config, data_dir).await?;
 
             ferris_mcp::serve_stdio(identity.agent_id, memory, storage, tasks, inference, None)
                 .await
@@ -461,13 +449,7 @@ async fn cmd_join(
 
     let resources = ferris_core::resources::detect().contributed(config.network.contribute_percent);
 
-    let models_dir = data_dir.join("models");
-    let backend = ferris_inference::create_backend(
-        &config.inference.ollama_url,
-        config.inference.max_concurrent_requests,
-        &models_dir,
-    )
-    .await?;
+    let backend = ferris_core::build_inference_backend(&config, data_dir).await?;
     let models = match backend.list_models().await {
         Ok(m) => {
             println!("detected {} local models", m.len());
@@ -561,14 +543,7 @@ async fn cmd_status(data_dir: &Path) -> ferris_common::Result<()> {
         .await
         .unwrap_or(0);
 
-    let models_dir = data_dir.join("models");
-    let backend = ferris_inference::create_backend(
-        &config.inference.ollama_url,
-        config.inference.max_concurrent_requests,
-        &models_dir,
-    )
-    .await;
-    let inference_status = match &backend {
+    let inference_status = match ferris_core::build_inference_backend(&config, data_dir).await {
         Ok(b) if b.health_check().await.unwrap_or(false) => {
             let models = b.list_models().await.unwrap_or_default();
             format!("running ({} models)", models.len())
