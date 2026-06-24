@@ -9,7 +9,7 @@ authors.workspace = true
 aes-gcm = "0.10"
 hkdf = "0.12"
 rand.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
