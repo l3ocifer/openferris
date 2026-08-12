@@ -41,7 +41,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "time", 
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-rmcp = { version = "0.16", features = ["server", "transport-io", "schemars"] }
+rmcp = { version = "3.1", features = ["server", "transport-io", "schemars"] }
 schemars = "1"
 uuid = { version = "1", features = ["serde", "v7"] }
 openssl = { version = "0.10", features = ["vendored"] }
