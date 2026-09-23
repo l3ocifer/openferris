@@ -9,7 +9,7 @@ authors.workspace = true
 ferris-common = { path = "../ferris-common" }
 base64 = { workspace = true, optional = true }
 ferris-crypto = { path = "../ferris-crypto", optional = true }
-fastembed = { version = "5", optional = true }
+fastembed = { version = "7", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
