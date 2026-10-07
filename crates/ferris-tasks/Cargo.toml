@@ -7,7 +7,7 @@ authors.workspace = true
 
 [dependencies]
 chrono = "0.4"
-croner = "3"
+croner = "4"
 ferris-common = { path = "../ferris-common" }
 reqwest.workspace = true
 serde.workspace = true
